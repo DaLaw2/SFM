@@ -1,0 +1,38 @@
+{
+  "name": "s9_sensitivity",
+  "params": {
+    "decision_epoch": {
+      "values": [
+        0.25,
+        0.5,
+        1.0,
+        2.0
+      ],
+      "default": 0.5
+    },
+    "theta_iso": {
+      "values": [
+        0.3,
+        0.4,
+        0.5,
+        0.6,
+        0.7
+      ],
+      "default": 0.5
+    },
+    "debounce": {
+      "values": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "default": 2
+    }
+  },
+  "n_runs": 10,
+  "n_workers": 32,
+  "load_factor": 0.8,
+  "scenario": "S4 (4 faults, random 2-5x, 32 nodes)",
+  "total_wall_time_sec": 121.01626300811768
+}

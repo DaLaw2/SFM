@@ -1,0 +1,26 @@
+{
+  "name": "s10_load_sensitivity",
+  "load_factors": [
+    0.7,
+    0.8,
+    0.85,
+    0.9
+  ],
+  "fault_counts": [
+    2,
+    4,
+    6,
+    8
+  ],
+  "slowdown": 5.0,
+  "n_runs": 10,
+  "duration": 60.0,
+  "warmup": 5.0,
+  "n_workers": 32,
+  "u_threshold": 0.92,
+  "baselines": [
+    "adaptive",
+    "no_mitigation"
+  ],
+  "total_wall_time_sec": 297.17391180992126
+}

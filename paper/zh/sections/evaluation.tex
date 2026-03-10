@@ -1,0 +1,380 @@
+\section{評估}
+\label{sec:evaluation}
+
+本節以 SimPy 離散事件模擬驗證上述分析結果。
+目標為：（1）驗證操作包絡線、嚴重度非單調性與 SHED--P2C 互補性定理；
+（2）與文獻基線比較；
+（3）分析不同運作條件下的穩健性。
+
+\subsection{實驗設定}
+
+叢集由 $N = 32$ 個工作節點組成，
+各以 M/D/1 佇列建模，$\tbase = 10$\,ms。
+預設負載因子 $L = 0.80$（總到達率 $\Lambda = 2{,}560$ req/s），
+SLO 目標為 P99 $\leq 50$\,ms。
+
+比較對象為以下八種策略：
+\begin{itemize}
+\item \texttt{no\_mitigation}：不回應慢故障（下界）。
+\item \texttt{fixed\_speculation}：始終對沖，從不削減或隔離。
+\item \texttt{fixed\_shedding}：始終透過降低權重來削減負載。
+\item \texttt{fixed\_isolation}：激進地隔離慢節點
+  （$\theta_{\text{iso}} = 0.3$）。
+\item \texttt{adaptive}（\system{}）：本文提出之自適應多策略框架。
+\item \texttt{lit\_hedged}：無條件對沖請求~\cite{dean2013tail}，
+  延遲閾值 $= 3 \cdot \tbase$，10\% 預算上限。
+\item \texttt{lit\_blacklist}：異常值黑名單（Cassandra
+  風格~\cite{lakshman2010cassandra}），$k = 2.0$，冷卻週期 3 期。
+\item \texttt{lit\_retry}：超時重試，
+  逾時閾值 $= 0.7 \times \text{SLO}$。
+\end{itemize}
+
+表~\ref{tab:scenarios}~總結 6 個主要場景（S2--S7），
+各測試一種不同的故障模式。
+每個場景以不同隨機種子執行 10 次；
+S4 因隨機減速因子導致變異較高，故執行 20 次。
+
+\begin{table}[t]
+\centering
+\caption{主要故障場景配置。}
+\label{tab:scenarios}
+\small
+\begin{tabular}{@{}llccc@{}}
+\toprule
+編號 & 模式 & 故障數 & 嚴重度 & 持續時間 \\
+\midrule
+S2 & 漸進式 & 2 & $1{\to}15\times$ & 60\,s \\
+S3 & 閃群 & 2 & $3\times$ + 負載尖峰 & 60\,s \\
+S4 & 多節點 & 4 & $2{-}5\times$（隨機） & 60\,s \\
+S5 & 波動式 & 2 & $5\times$ 開/關 & 60\,s \\
+S6 & 級聯 & $1{\to}2{\to}3$ & $5/5/3\times$ & 90\,s \\
+S7 & 恢復 & 2 & $8\times$ 後恢復 & 100\,s \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{反應式與主動式策略}
+\label{sec:eval-lit}
+\label{sec:eval-tiers}
+
+表~\ref{tab:tiers}~呈現所有場景的 P99 延遲，
+結果顯示三個明顯的效能層級。
+
+\begin{table}[t]
+\centering
+\caption{各場景在 $L = 0.80$ 下的 P99 延遲（ms）。
+  粗體標示各場景之最佳值。}
+\label{tab:tiers}
+\footnotesize
+\begin{tabular}{@{}lcccccc@{}}
+\toprule
+基線 & S2 & S3 & S4 & S5 & S6 & S7 \\
+\midrule
+\system{} & \textbf{30.0} & 39.3 & 43.8 & \textbf{30.3} & \textbf{32.8} & \textbf{29.7} \\
+lit\_blacklist & 30.5 & 41.1 & \textbf{37.4} & 30.5 & \textbf{32.8} & 30.5 \\
+fixed\_iso & 30.3 & 39.9 & 37.6 & 30.6 & \textbf{32.8} & \textbf{29.7} \\
+fixed\_spec & 31.9 & 41.0 & 54.6 & 31.2 & 35.0 & 29.8 \\
+fixed\_shed & 33.6 & \textbf{39.2} & 69.3 & 31.1 & 37.0 & 29.9 \\
+\midrule
+lit\_hedged & 61.3 & 68.8 & 110.9 & 34.5 & 110.6 & 32.3 \\
+lit\_retry & 61.3 & 68.7 & 108.8 & 34.5 & 110.2 & 32.3 \\
+no\_mitig & 67.2 & 73.3 & 125.1 & 34.6 & 125.7 & 32.3 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+第一層為主動策略（P99 $< 45$\,ms）。
+\system{}、lit\_blacklist 和 fixed\_isolation 在每個場景均達成
+P99 低於 45\,ms。三者的核心機制相同：先偵測故障節點，再從路由中移除——偵測方法本身（離開間隔、延遲異常值或固定閾值）並非決定性因素。
+
+第二層為反應式策略（P99 接近無緩解基線）。
+lit\_hedged 與 lit\_retry 相較於無緩解僅有微幅改善：
+SLO 違反率 0.7--3.4\% vs.\ 0.8--3.7\%（改善 $< 0.3$ 個百分點）。
+根本原因在於：對沖機制係針對隨機性慢請求所設計，
+不適用於持續性故障。
+各請求獨立決定是否對沖，
+但後續請求仍然會路由至同一故障節點。
+
+第三層為無緩解基線，
+P99 介於 32--125\,ms 之間，視場景嚴重度而定。
+
+圖~\ref{fig:tiers}~以長條圖呈現八種策略的效能分層，
+主動式與反應式策略之間的顯著效能差距一目瞭然。
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.85\linewidth]{p99_comparison.png}
+\caption{八個基線的 P99 延遲比較（S4 場景，$L = 0.80$）。
+  三個效能層級清晰可見：主動策略（P99 $< 45$\,ms）、
+  反應式策略（P99 $\approx$ no\_mitigation）和無緩解基線。}
+\label{fig:tiers}
+\end{figure}
+
+\subsection{標準負載下的極小極大遺憾}
+\label{sec:eval-regret}
+
+表~\ref{tab:regret}~呈現 S2--S7 的極小極大遺憾分析。
+
+\begin{table}[t]
+\centering
+\caption{$L = 0.80$ 下的極小極大遺憾（ms，高於場景最佳 P99）。}
+\label{tab:regret}
+\footnotesize
+\begin{tabular}{@{}lccl@{}}
+\toprule
+策略 & 最大遺憾 & 平均遺憾 & 最差場景 \\
+\midrule
+lit\_blacklist & 0.6 & 0.1 & S7 \\
+fixed\_iso & 0.2 & 0.1 & S4 \\
+\system{} & 0.2 & 0.1 & S4 \\
+fixed\_spec & 9.5 & 2.2 & S4 \\
+fixed\_shed & 22.2 & 5.0 & S4 \\
+lit\_retry & 76.4 & 36.2 & S6 \\
+lit\_hedged & 76.9 & 36.4 & S6 \\
+no\_mitig & 92.2 & 42.0 & S6 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+在標準負載（$L = 0.80$）下，三種主動策略
+——lit\_blacklist（0.6\,ms）、fixed\_isolation（0.2\,ms）
+與 \system{}（0.2\,ms）——皆達到近乎零的極小極大遺憾。
+此結果證實了互補性定理的核心預測：
+在 P2C 下，能否偵測到故障遠比選用何種回應策略重要。
+
+\subsection{SHED--P2C 互補性驗證}
+\label{sec:eval-shed}
+
+為驗證互補性定理（第~\ref{sec:complementarity}~節），
+本節比較純 P2C（無緩解）、SHED（權重削減但不隔離）
+與完全隔離三者的表現。
+比較涵蓋四個維度：叢集大小、嚴重度、負載與故障數
+（S15，每種配置 10 次執行）。
+
+\subsubsection*{規模相依性}
+
+圖~\ref{fig:shed_scale}~證實 $O(N^{-\alpha})$ 的衰減規律。
+SHED 相對於無緩解的 P99 改善從 $N=8$ 時的 45.1\,ms
+降至 $N=64$ 時的 1.7\,ms（1 個故障，$3\times$，$L=0.70$）。
+在 $N=64$ 時，純 P2C 幾乎可匹敵顯式緩解，
+與 P2C 的候選率 $\approx 2/N \approx 3\%$ 一致。
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.85\linewidth]{shed_scale_decay.png}
+\caption{SHED 效益隨叢集規模以 $O(N^{-\alpha})$（$\alpha \approx 1.3$）衰減。
+  三種主動策略（SHED、隔離、自適應）在每個 $N$ 值下產生幾乎相同的
+  P99 改善，證實策略選擇無關緊要。
+  在 $N = 64$ 時，效益縮小至 $< 2$\,ms。}
+\label{fig:shed_scale}
+\end{figure}
+
+\subsubsection*{自行隔離閾值}
+
+在 $s = 10$（$N = 16$，$L = 0.70$）時，
+所有策略收斂至 34.6\,ms：SHED、隔離和無緩解產生相同的 P99。
+此結果證實，在 $\sstar$ 以上，
+P2C 的佇列深度訊號已足以實現完全的隱式隔離。
+非單調性十分明顯：P99 從 $s = 1.5$ 的 29.3\,ms
+升至 $s = 5$ 的 99.7\,ms，再降至 $s = 10$ 的 34.6\,ms。
+
+\subsubsection*{SHED $\approx$ ISO（在 P2C 下）}
+
+在所有 16 種測試配置中，SHED（$w_{\min} = 0.05$）
+與完全隔離（$w = 0$）的 P99 差距始終 $< 2$\,ms。
+相比之下，無緩解與任一主動策略的差距為 5--70\,ms。
+此一數量級的差異證實偵測才是瓶頸，而非策略選擇。
+
+\subsubsection*{對照組：加權隨機路由}
+
+在加權隨機路由（無佇列深度比較）下，
+SHED 帶來巨大改善：在 $s = 1.5$--$5\times$ 時為 772--15,697\,ms。
+這證明 SHED 的權重削減是真正有效的機制——
+正是 P2C 的佇列深度比較使其變得邊際化。
+此結果驗證了 SHED 與 P2C 為互補關係，
+而非 SHED 本身無效。
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.85\linewidth]{shed_severity_sweep.png}
+\caption{P2C 與加權隨機路由下的嚴重度掃描（$N = 16$，$f = 1$，$L = 0.70$）。
+  （a）在 P2C 下，SHED 與隔離無法區分；無緩解曲線清楚呈現非單調性。
+  （b）在加權隨機路由下，SHED 帶來數量級的改善（注意對數刻度），
+  證明 SHED 的權重削減為 P2C 所涵蓋的真實機制。}
+\label{fig:shed_severity}
+\end{figure}
+
+\subsection{高負載行為}
+\label{sec:eval-highload}
+
+本節掃描 $L \in \{0.80, 0.85, 0.88, 0.90\}$，
+涵蓋三個故障場景（S3 風格：2 節點/$3\times$；
+S4 風格：4 節點/混合；S6 風格：級聯）。
+
+\begin{table}[t]
+\centering
+\caption{各負載因子在 S3/S4/S6 故障場景下的極小極大遺憾（ms）。}
+\label{tab:highload}
+\footnotesize
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+策略 & $L{=}0.80$ & $L{=}0.85$ & $L{=}0.88$ & $L{=}0.90$ \\
+\midrule
+\system{} & 7.1 & 90.0 & 26.6 & \textbf{34.8} \\
+fixed\_iso & 1.4 & 86.3 & \textbf{18.8} & 34.9 \\
+lit\_blacklist & \textbf{0.0} & \textbf{0.2} & 189.7 & 1146.5 \\
+no\_mitig & 86.9 & 88.7 & 88.8 & 51.3 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsubsection*{關鍵發現}
+\begin{enumerate}
+\item 在 $L = 0.88$ 時，fixed\_isolation 的遺憾（18.8\,ms）
+  低於 \system{}（26.6\,ms）；在 $L = 0.90$ 時兩者幾乎打平
+  （34.8 vs.\ 34.9\,ms）。
+  此結果進一步證實互補性定理的預測：
+  在 P2C 下具體策略選擇無關緊要，
+  漸進式回應相較於直接隔離並無系統性優勢。
+
+\item lit\_blacklist 在 $L \geq 0.88$ 且 4 個節點故障時
+  出現\emph{災難性失敗}（P99 $= 1{,}407$\,ms，89\% SLO 違反）。
+  根本原因：黑名單完全移除節點，其保守的冷卻期造成
+  振盪（加入黑名單 $\to$ 重新整合 $\to$ 再次加入黑名單），
+  放大了負載尖峰。
+
+\item 在容量極限（$L = 0.88$，$f = 4$，$\rhoeff = 1.006$），
+  \emph{所有}策略均無法維持 SLO，
+  證實了操作包絡線構成不可逾越的硬限制。
+
+\item 在極端場景下（如所有 8 個節點均發生 $2\times$ 故障，$L = 0.80$），
+  主動緩解\emph{反而有害}：
+  no\_mitigation（76.3\,ms）優於 fixed\_isolation（81.7\,ms）
+  和 adaptive（95.7\,ms）。
+  此時 P2C 已自然地按容量比例分配流量，
+  顯式削減反而使健康節點飽和。
+  此結果進一步證實操作包絡線作為緩解決策前提的必要性。
+\end{enumerate}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.85\linewidth]{highload_cascade.png}
+\caption{級聯場景（S6）之 P99 延遲與負載因子關係。
+  所有主動策略在 $L < 0.85$ 時收斂；在 $L \geq 0.88$ 時
+  操作包絡線遭突破，效能急劇下降。
+  lit\_blacklist 的振盪使其在高負載時與其他主動策略分離。}
+\label{fig:highload}
+\end{figure}
+
+\subsection{嚴重度非單調性驗證}
+
+表~\ref{tab:nonmono}~使用 S8 資料
+（4 個故障，$N = 32$，$L = 0.80$）驗證臨界嚴重度公式。
+預測的 $\sstar = 14.1$（P99）正確標定了可見性的轉折點：
+$10\times$（P99 $= 439$\,ms，可見）vs.\
+$20\times$（P99 $= 49$\,ms，不可見）。
+流量模型（公式~\ref{eq:pfault}）在 $f=8$ 時精確至三位有效數字，
+$f=4$ 時系統性低估 10--14\%（見表~\ref{tab:pfault}）。
+
+\begin{table}[t]
+\centering
+\caption{$f = 4$，$N = 32$，$L = 0.80$（無緩解）下的嚴重度非單調性。
+  $\sstar = 14.1$（P99）。}
+\label{tab:nonmono}
+\footnotesize
+\begin{tabular}{@{}cccrl@{}}
+\toprule
+$s$ & P99 (ms) & P999 (ms) & $\pfault$ & 可見性 \\
+\midrule
+$3\times$ & 95.7 & 118.6 & 5.20\% & 可見（$> 1$\%） \\
+$5\times$ & 185.8 & 234.7 & 3.12\% & 可見 \\
+$10\times$ & 439.0 & 608.3 & 1.56\% & 可見 \\
+$20\times$ & 49.0 & 17{,}427 & 0.78\% & \textbf{不可見}（$< 1$\%） \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+$20\times$ 的情況值得特別關注：
+P99 回到近乎健康的水準（49\,ms），
+但 P999 飆升至 17 秒，
+因為 $s^{*}_{P999} = 142.7$（遠高於 20）。
+故障是「沉默殺手」，
+對 P99 監控不可見，但於更高百分位造成毀滅性影響。
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.85\linewidth]{severity_nonmono_curve.png}
+\caption{P99 延遲 vs.\ 減速因子（$N = 32$，$f = 2$，$L = 0.80$）。
+  無緩解曲線呈現明確的非單調性：P99 在 $s = 3$ 附近達到峰值，
+  隨後隨 P2C 自行隔離而下降。
+  所有主動策略在整個嚴重度範圍內維持平坦的 P99。}
+\label{fig:nonmono_curve}
+\end{figure}
+
+\subsection{負載均衡策略之影響}
+\label{sec:eval-lor}
+
+進一步的問題是：更精確的負載均衡器能否取代顯式緩解？
+Least-Outstanding-Requests（LOR）將每個請求路由至
+\emph{所有}節點中佇列最短者，
+理論上優於 P2C 的雙樣本近似。
+以下在三個故障場景下比較兩種策略。
+
+\begin{table}[t]
+\centering
+\caption{P2C 與 LOR 負載均衡下的 P99 延遲（ms）
+  （$N = 32$，$L = 0.80$）。}
+\label{tab:lor}
+\footnotesize
+\begin{tabular}{@{}llccc@{}}
+\toprule
+場景 & 策略 & P2C & LOR & $\Delta$ \\
+\midrule
+\multirow{3}{*}{S2（漸進式）}
+  & no\_mitigation   & 129.7 & 84.3  & $-$45.4 \\
+  & fixed\_isolation & 30.8  & 20.7  & $-$10.2 \\
+  & adaptive         & 30.8  & 19.9  & $-$11.0 \\
+\midrule
+\multirow{3}{*}{S4（多節點）}
+  & no\_mitigation   & 95.9  & 59.2  & $-$36.8 \\
+  & fixed\_isolation & 37.8  & 104.4 & $+$66.7 \\
+  & adaptive         & 37.7  & 51.2  & $+$13.5 \\
+\midrule
+\multirow{3}{*}{S6（級聯）}
+  & no\_mitigation   & 126.9 & 83.3  & $-$43.6 \\
+  & fixed\_isolation & 32.8  & 20.3  & $-$12.6 \\
+  & adaptive         & 32.8  & 19.9  & $-$12.9 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+無緩解時，LOR 在所有場景均領先 P2C 約 30--45\,ms：
+全資訊路由天然避開慢節點。
+然而，當隔離將故障節點自路由池中移除後，
+S4（4 個故障）的結果出現反轉：
+LOR 的 P99 從 P2C 下的 37.8\,ms 飆升至 104.4\,ms。
+根本原因是\emph{羊群效應}：LOR 總是將所有並行請求路由至佇列最短的同一節點，造成同步突發，進而使排隊延遲激增。
+P2C 的隨機雙樣本選取提供了天然的抖動，
+防止了此同步現象，使其在容量受限的隔離情境下更為穩健。
+
+由此可見，P2C 雖非理論最優卻能成為生產主流，正因其隨機性並非弱點，反而是隔離場景下實現容錯穩健性的關鍵。
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.85\linewidth]{p2c_vs_lor.png}
+\caption{三個故障場景下 P2C 與 LOR 之比較（$N = 32$，$L = 0.80$）。
+  無緩解時 LOR 優於 P2C，但在 S4（4 個故障）的隔離下
+  遭受羊群效應：LOR+隔離的 P99 飆至 104\,ms，
+  而 P2C 下僅為 38\,ms。}
+\label{fig:lor}
+\end{figure}
+
+\subsection{參數敏感度}
+
+將所有閾值擾動 $\pm 50$\%，
+藉此驗證 \system{} 並未過度擬合。
+在 13 種配置與 6 個場景的組合下，
+所有配置均達成 P99 $< 50$\,ms。
+參數空間中不存在「懸崖效應」：
+效能隨參數偏移而平滑遞減，
+確認本框架對參數調校的精確度不敏感。

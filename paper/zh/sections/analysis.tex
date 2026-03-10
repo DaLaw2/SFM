@@ -1,0 +1,444 @@
+\section{分析結果}
+\label{sec:analysis}
+
+本節推導三個解析結果，
+刻畫 P2C 路由下慢故障緩解的根本限制與機制。
+
+\subsection{操作包絡線}
+\label{sec:envelope}
+
+當偵測器將故障節點隔離時，剩餘健康節點的負載隨之上升。
+直覺上，存在一個臨界點——隔離太多節點，
+健康節點本身就會過載。以下定理量化了這個臨界點。
+
+\begin{theorem}[操作包絡線]
+\label{thm:envelope}
+在具有負載因子 $L$ 的 $N$ 節點叢集中，
+以隔離為手段的緩解策略，所能容忍的最大故障節點比例為：
+\begin{equation}
+  \fmax = 1 - \frac{L}{U}
+\end{equation}
+其中 $U$ 為使單節點排隊延遲達到不可接受程度的利用率上限。
+\end{theorem}
+
+\begin{proof}
+當 $f$ 個節點被隔離（從活躍池中移除）時，
+剩餘 $N - f$ 個健康節點必須承擔全部系統負載。
+每節點的有效利用率變為：
+\begin{equation}
+  \rhoeff = \frac{\Lambda}{(N-f) \cdot \mu} = \frac{L \cdot N}{N - f}
+\end{equation}
+為使系統在可接受的排隊延遲下維持穩定，
+需滿足 $\rhoeff \leq U$。對 $f$ 求解可得：
+\begin{equation}
+  f \leq N \left(1 - \frac{L}{U}\right)
+\end{equation}
+\end{proof}
+
+簡言之，$L/U$ 是「最少需要多少比例的節點才能撐住負載」，
+超出的部分才是可隔離的餘裕。
+負載越高，餘裕越小。
+
+\medskip
+
+定理~\ref{thm:envelope}中的 $U$ 是一個自由參數——
+它取決於對「可接受排隊延遲」的定義。
+接下來從 M/D/1 模型推導其封閉形式，
+如此一來，包絡線便成為無需調參的預測工具。
+對於服務時間為確定值 $\tbase$ 的單伺服器佇列，
+平均逗留時間為：
+\begin{equation}
+  T(\rho) = \tbase \cdot \frac{2 - \rho}{2(1 - \rho)}
+  \label{eq:md1}
+\end{equation}
+
+\begin{corollary}[封閉式利用率上限]
+\label{cor:U}
+考慮一 M/D/1 佇列，其基底服務時間為 $\tbase$，SLO 目標以平均延遲衡量，則
+利用率上限為：
+\begin{equation}
+  U = 1 - \frac{\tbase}{2 \cdot \text{SLO} - \tbase}
+    = \frac{2(\text{SLO} - \tbase)}{2 \cdot \text{SLO} - \tbase}
+  \label{eq:U}
+\end{equation}
+\end{corollary}
+
+\begin{proof}
+令公式~\ref{eq:md1}中 $T(U) = \text{SLO}$，
+設 $\alpha = 2\,\text{SLO}/\tbase$，
+直接求解一元一次方程式可得
+$U = (\alpha - 2)/(\alpha - 1) = 1 - \tbase/(2 \cdot \text{SLO} - \tbase)$。
+\end{proof}
+
+以本文參數（$\text{SLO} = 50$\,ms，$\tbase = 10$\,ms）：
+$U = 1 - 10/90 = 8/9 \approx 0.889$。全文使用 $U = 8/9$。
+
+\medskip
+
+\subsubsection*{推廣至 M/G/1 服務時間}
+以下推廣並非主線論述所需，但可量化服務時間變異性對包絡線的影響。
+當服務時間具有變異係數 $\Cs$ 時，
+Pollaczek--Khinchine 公式給出
+$T(\rho) = \tbase [1 + (1 + \Cs^2)\,\rho / (2(1-\rho))]$。
+令 $T(U) = \text{SLO}$ 求解可得推廣上限：
+\begin{equation}
+  U(\Cs) = \frac{\alpha}{\alpha + 1 + \Cs^2}
+  \quad\text{其中 } \alpha = 2\left(\frac{\text{SLO}}{\tbase} - 1\right)
+  \label{eq:U_mg1}
+\end{equation}
+
+表~\ref{tab:Ucv}~展示服務時間變異性的影響。
+
+\begin{table}[t]
+\centering
+\caption{不同服務時間分布下以平均延遲為基準的利用率上限 $U$
+  與操作包絡線 $\fmax$（$L = 0.80$）。}
+\label{tab:Ucv}
+\begin{tabular}{@{}llccc@{}}
+\toprule
+分布 & $\Cs^2$ & $U$ & $\fmax$ & 最大故障數（$N{=}32$） \\
+\midrule
+M/D/1 & 0 & 0.889 & 10.0\% & 3.2 \\
+M/G/1（溫和） & 0.25 & 0.865 & 7.5\% & 2.4 \\
+M/M/1 & 1.0 & 0.800 & 0.0\% & 0.0 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+M/M/1（$\Cs^2 = 1$）的結果值得特別關注：
+$U = 0.800$，意味著在 $L = 0.80$ 時故障容忍度為\emph{零}——
+任何慢故障都會立即違反 SLO。
+此結果量化了一個直覺認識——服務時間變異性會侵蝕系統餘裕，
+也表明確定性 M/D/1 假設提供了故障容忍度的\emph{樂觀}上界。
+
+\begin{remark}[平均值上限的有效性與緊密性]
+\label{rem:mean-p99}
+表~\ref{tab:Ucv}~由平均延遲導出 $U$，
+但 SLO 通常定義於 P99。
+對 M/D/1（$\Cs^2 = 0$），差距很小：
+確定性服務時間使回應時間的變異很小，
+故 $U_{\text{P99}} \gtrsim U_{\text{mean}}$，
+公式為\emph{保守的}（安全的）。
+對 M/M/1（$\Cs^2 = 1$），差距很大：
+模擬顯示 P99 在 $L \approx 0.70$ 即超越 50\,ms SLO，
+基於平均值的 $U$ 對高變異分布而言是\emph{樂觀的}。
+就緊密性而言，
+在 $L = 0.80$、$N = 32$ 時理論上限為 3.2 個節點，
+而實驗中隔離 4 個節點仍可達成 P99 $< 50$\,ms，
+此餘裕源自平均延遲與 P99 之間的差距。
+包絡線略為保守，但預測的通過／失敗邊界與實驗相差不超過一至兩個節點。
+\end{remark}
+
+\medskip
+
+\subsubsection*{非隔離策略}
+定理~\ref{thm:envelope}~中的上界假設故障節點被完全隔離。
+若策略僅\emph{削減}故障節點流量而非完全隔離，
+則故障節點貢獻 $\mu/s_i$ 的有效服務率，
+有效利用率為：
+\begin{equation}
+  \rhoeff = \frac{L \cdot N}{(N-f) + \sum_{i \in F} 1/s_i}
+\end{equation}
+其中 $F$ 為故障節點集合。
+此值始終低於完全隔離的情況，
+證實操作包絡線為\emph{保守估計}。
+
+以 $N = 32$、永久 $5\times$ 故障的配置，
+在四個負載等級下驗證定理~\ref{thm:envelope}
+（表~\ref{tab:envelope}）。
+
+\begin{table}[t]
+\centering
+\caption{操作包絡線驗證。理論預測最大故障比例；
+  實驗欄位顯示自適應策略是否滿足 P99 $< 50$\,ms 之 SLO。}
+\label{tab:envelope}
+\begin{tabular}{@{}ccccl@{}}
+\toprule
+$L$ & $\fmax$ & $f_{\max}$ 節點數 & 實驗邊界 & 吻合 \\
+\midrule
+0.70 & 21.3\% & 6.8 & 8 通過, 10 失敗 & \checkmark$^\dagger$ \\
+0.80 & 10.0\% & 3.2 & 4 通過, 6 失敗 & \checkmark \\
+0.85 & 4.4\% & 1.4 & 2 通過, 4 失敗 & \checkmark$^\dagger$ \\
+0.90 & $<0$ & --- & 0 通過, 2 失敗 & \checkmark \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+該公式無需任何擬合參數即可預測通過／失敗邊界。
+標記 $\dagger$ 的列中，實驗通過的故障數超過理論上限
+（如 $L=0.70$ 時理論上限為 6.8 個節點，但 8 個仍通過），
+這是因為 $U$ 由\emph{平均}延遲導出，而 P99 的有效上限略高
+（見備註~\ref{rem:mean-p99}），使包絡線成為保守估計。
+$L = 0.90$ 超過 $U = 8/9$，即使無故障亦無法滿足 SLO。
+
+圖~\ref{fig:envelope}~以圖形呈現各負載等級下的操作包絡線，
+展示安全區與過載區之間的明確邊界。
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.85\linewidth]{operating_envelope.png}
+\caption{操作包絡線：理論與實驗對照。
+  邊界 $\fmax = 1 - L/U$（虛線）
+  劃分安全區（P99 $< 50$\,ms）與過載區，
+  驗證過程無需任何擬合參數。}
+\label{fig:envelope}
+\end{figure}
+
+\subsection{嚴重度非單調性}
+\label{sec:nonmono}
+
+\begin{assumption}[平均場 P2C 近似]
+\label{asm:meanfield}
+在 P2C 加權隨機抽樣下，穩態時各節點所接收的流量
+與其有效服務容量成正比。
+即容量為 $\mu_i$ 的節點接收總流量的
+$\mu_i / \sum_j \mu_j$ 份額。
+\end{assumption}
+
+當節點數量夠大且抽樣按容量加權時，此近似趨於精確。
+對有限叢集而言，P2C 的佇列深度比較
+會使故障節點的流量分配產生輕微的正偏差
+（見表~\ref{tab:pfault}：$f=4$ 時低估 10--14\%，
+$f=8$ 時 $< 1$\%）。
+
+\medskip
+
+\begin{theorem}[臨界嚴重度]
+\label{thm:sstar}
+在假設~\ref{asm:meanfield}~下，
+流量到達 $f$ 個（減速因子為 $s$）故障節點的比例為：
+\begin{equation}
+  \pfault(f, s, N) = \frac{f}{s \cdot (N-f) + f}
+  \label{eq:pfault}
+\end{equation}
+使故障節點的延遲影響在第 $q$ 百分位上不可見的臨界嚴重度為：
+\begin{equation}
+  \sstar = \frac{f \cdot q}{(1-q)(N-f)}
+  \label{eq:sstar_deriv}
+\end{equation}
+\end{theorem}
+
+換言之：P2C 路由會讓越嚴重的故障節點分到越少的流量。
+當嚴重度夠高時，故障流量的佔比降到 $1-q$ 以下——
+此時故障請求在第 $q$ 百分位上統計不可見。
+$\sstar$ 就是這個臨界點。
+
+\begin{proof}
+在 P2C 下，流量按有效服務容量的比例分配。
+健康節點容量為 $\mu$；故障節點容量為 $\mu/s$。
+故障節點的流量佔比化簡為
+$\pfault = f / [s(N{-}f) + f]$（公式~\ref{eq:pfault}）。
+系統延遲服從混合分布，
+當 $\pfault > 1-q$ 時故障請求在第 $q$ 百分位可見。
+令 $\pfault = 1-q$ 並對 $s$ 求解即得 $\sstar$。
+\end{proof}
+
+\medskip
+
+\subsubsection*{非單調性機制}
+當 $s < \sstar$ 時，$\pfault > 1-q$，
+故障節點的延遲主導第 $q$ 百分位。
+系統 $P_q$ 隨 $s$ 增大而升高，
+因故障節點的服務時間為 $s \cdot \tbase$。
+當 $s > \sstar$ 時，$\pfault < 1-q$，
+故障請求在第 $q$ 百分位統計上不可見。
+系統 $P_q$ 回落至健康節點值。
+因此，\emph{最差}的 $P_q$ 發生在 $s = \sstar$ 附近，
+而非 $s \to \infty$。
+此即嚴重度非單調性：
+將故障嚴重度提高至 $\sstar$ 以上，
+尾延遲反而\emph{降低}。
+
+換言之，系統管理員面臨的最棘手情境並非極端故障（$s \gg \sstar$），
+而是中度故障（$s \approx \sstar$）——這恰恰是最難偵測的區間。
+
+\subsubsection*{百分位相關風險}
+同一故障在不同百分位上的可見性可能截然不同，此即百分位相關風險。
+對 $f = 4$，$N = 32$：$s^{*}_{P99} = 14.1$ 但
+$s^{*}_{P999} = 142.7$。
+$20\times$ 減速對 P99 不可見（$20 > 14.1$）
+但對 P999 可見（$20 < 142.7$），
+這解釋了實驗中觀察到的現象：
+P99 $= 49$\,ms（正常）但 P999 $= 17{,}427$\,ms（災難性）。
+
+表~\ref{tab:pfault}~驗證上述流量分配模型。
+
+\begin{table}[t]
+\centering
+\caption{到達故障節點的流量比例：理論與實驗對照
+  （無緩解，$N=32$，$L=0.80$）。}
+\label{tab:pfault}
+\begin{tabular}{@{}ccccc@{}}
+\toprule
+$f$ & $s$ & 理論 $\pfault$ & 實驗值 & 比率 \\
+\midrule
+4 & $3\times$ & 4.55\% & 5.20\% & 1.14 \\
+4 & $5\times$ & 2.78\% & 3.12\% & 1.12 \\
+4 & $10\times$ & 1.41\% & 1.56\% & 1.11 \\
+4 & $20\times$ & 0.71\% & 0.78\% & 1.10 \\
+\midrule
+8 & $3\times$ & 10.00\% & 10.42\% & 1.04 \\
+8 & $5\times$ & 6.25\% & 6.26\% & 1.00 \\
+8 & $10\times$ & 3.23\% & 3.23\% & 1.00 \\
+8 & $20\times$ & 1.64\% & 1.64\% & 1.00 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+模型在 $f=4$ 時系統性低估 10--14\%
+（因 P2C 的佇列深度比較機制使較慢節點接收到略多於模型預測的流量），
+而在 $f=8$ 時則精確至三位有效數字。
+$f = 4$ 時的系統性正偏差（比率 $\approx 1.10$--$1.14$）
+源自 P2C 佇列深度比較中的平手打破機制，此殘餘偏差以 $O(1/N)$ 的速率遞減。
+就實際用途而言，平均場近似足以預測臨界嚴重度 $\sstar$
+及 P99 可見性邊界。
+
+圖~\ref{fig:heatmap}~展示不同故障數量及減速因子組合下的
+嚴重度非單調性。
+熱力圖清楚顯示中度嚴重度
+（如 4 個故障 $10\times$：P99 $= 439$\,ms）
+產生的尾延遲比極端嚴重度
+（如 4 個故障 $20\times$：P99 $= 49$\,ms）更差。
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.85\linewidth]{severity_heatmap.png}
+\caption{嚴重度非單調性熱力圖。$L = 0.80$，$N = 32$ 下，
+  按故障數量與減速因子呈現 P99 延遲（ms）。
+  非單調模式清晰可見：在每一種故障數量下，
+  存在一個臨界嚴重度，超過該值後 P99 急遽下降。}
+\label{fig:heatmap}
+\end{figure}
+
+\subsection{SHED--P2C 互補性}
+\label{sec:complementarity}
+
+操作包絡線與臨界嚴重度界定了緩解的可能範圍。
+接下來分析 P2C 與顯式權重削減（SHED）之間的互動，
+證明兩者為互補機制——而非冗餘。
+
+\subsubsection*{P2C 下的兩階段路由}
+P2C 路由做出兩個依序的決策：
+\begin{enumerate}
+\item \emph{候選者選取}：依權重 $w_i$ 的比例抽取兩個工作節點。
+  故障節點被選為候選者的機率約為 $2w_i / \sum_j w_j$。
+\item \emph{佇列深度比較}：在兩個候選者中，
+  將請求路由至佇列較短的一方。
+\end{enumerate}
+SHED 作用於第一階段，降低故障節點的 $w_i$；
+P2C 的隱式迴避則作用於第二階段，透過佇列深度比較實現。
+因此，第二階段只能在第一階段所選定的候選者之間做決策。
+
+\begin{proposition}[SHED--P2C 互補性]
+\label{thm:complementarity}
+在採用 $d = 2$ 選擇的 P2C 路由下，
+考慮一個 $N$ 節點叢集中的單一故障節點（嚴重度為 $s$），
+令 $\Delta_{\text{SHED}}(N, s)$ 為對其施加 SHED 權重削減後的 P99 改善量。則：
+\begin{enumerate}
+\item[(a)] \emph{規模衰減}：$\Delta_{\text{SHED}}(N, s) = O(N^{-\alpha})$，
+  其中 $\alpha \approx 1.3$（中度嚴重度區間）。
+\item[(b)] \emph{嚴重度區間}：$\Delta_{\text{SHED}}$ 在中等 $s$
+  （通常 $3$--$5\times$）時最大化，
+  在 $s < 1.5$ 及 $s > \sstar$ 時可忽略。
+\item[(c)] \emph{實務等價}：在 P2C 下，最低權重 $w_{\min} = 0.05$
+  可達到與完全隔離（$w = 0$）相差 $O(w_{\min}/N)$ 以內的 P99。
+\end{enumerate}
+\end{proposition}
+
+直覺上：P2C 的佇列比較已是一道強大的防線。
+SHED 在此之上再加一層過濾，
+但因為第一道防線已經很有效，
+第二道的邊際效益隨叢集規模衰減。
+
+\medskip
+
+此結論源自兩階段結構。無 SHED（均勻權重）時，
+每次請求選到故障節點作為候選者的機率約為 $2/N$。
+在 SHED 權重 $w_{\min}$ 下，此機率降為 $\approx 2w_{\min}/N$——
+候選率降低了 $1/w_{\min}$ 倍。
+然而，P2C 的第二階段透過佇列比較已在多數時候拒絕故障節點。
+到達故障節點的\emph{淨}流量在無 SHED 時為 $O(1/N)$，
+有 SHED 時為 $O(w_{\min}/N)$。
+隨著 $N$ 增長，故障節點的基準流量已可忽略，
+SHED 的邊際效益因而消失。
+
+\subsubsection*{容量損失邊界}
+上述互補性有一個重要的例外：
+當健康節點的有效負載
+$L_{\text{healthy}} = L \cdot N / (N - f_{\text{shed}})$
+超過排隊膝點（$\approx 0.88$--$0.90$）時，
+SHED 的權重削減反而有害——
+重新分配的流量使健康節點飽和，
+導致的排隊延遲增加超過原先的改善。
+
+表~\ref{tab:shed_complementarity}~於不同叢集大小、
+嚴重度等級與故障數下驗證上述互補性命題。
+
+\begin{table}[t]
+\centering
+\caption{SHED 在 P2C 下相對於無緩解的 P99 改善（ms）。
+  SHED 將權重降至 $w = \max(0.05, 1-\sigma)$；ISO 設 $w = 0$。
+  所有數值為 10 次執行的平均值。}
+\label{tab:shed_complementarity}
+\begin{tabular}{@{}lccccl@{}}
+\toprule
+配置 & no\_mit & SHED & ISO & SHED $\Delta$ & 備註 \\
+\midrule
+\multicolumn{6}{@{}l}{\emph{規模掃描（$s = 3\times$，$L = 0.70$）}} \\
+$N=8$  & 79.7 & 34.6 & 34.3 & $-45.1$ & 小 $N$ 時效益大 \\
+$N=16$ & 59.3 & 29.8 & 28.2 & $-29.5$ & \\
+$N=32$ & 46.6 & 27.8 & 26.9 & $-18.8$ & \\
+$N=64$ & 28.5 & 26.8 & 26.4 & $-1.7$  & 大 $N$ 時可忽略 \\
+\midrule
+\multicolumn{6}{@{}l}{\emph{嚴重度掃描（$N = 16$，$L = 0.70$）}} \\
+$s=1.5$ & 29.3 & 28.0 & 28.1 & $-1.3$ & 低於偵測閾值 \\
+$s=3$   & 59.3 & 29.8 & 28.2 & $-29.5$ & 效益峰值 \\
+$s=5$   & 99.7 & 29.7 & 28.2 & $-70.0$ & 接近 $\sstar$ \\
+$s=10$  & 34.6 & 34.6 & 34.6 & $+0.0$ & 高於 $\sstar$：已自行隔離 \\
+\midrule
+\multicolumn{6}{@{}l}{\emph{無佇列感知路由（加權隨機）}} \\
+$s=3$, WR & 17757 & 2060 & --- & $-15697$ & 無 P2C 時 SHED 至關重要 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+最後一列表明 SHED 本身\emph{並非}無效——
+在無佇列感知路由下可帶來 15,697\,ms 的改善。
+P2C 的佇列深度比較大幅壓縮了 SHED 的邊際貢獻。
+此結果證實兩種機制互補：P2C 提供主要防禦，
+SHED 在候選者選取階段提供次級過濾。
+
+\medskip
+
+在 P2C 下，SHED 與 ISO 的 P99 差距始終 $< 2$\,ms
+（表~\ref{tab:shed_complementarity}），
+而無緩解與任何主動策略的差距則為 5--70\,ms。
+此一數量級的差異意味著，
+工程上的首要挑戰是\emph{多快}偵測到故障節點，
+而非\emph{多精確}地調降其權重。
+在 P2C 下，粗略的二元偵測器（「降權或不降權」）
+即可達到近乎最優的效果。
+
+\subsection{對緩解設計的啟示}
+
+上述公式將任意 $(f, s, L, N)$ 配置劃分為三個區域：
+
+\begin{enumerate}
+\item 不可行（$f/N > \fmax$）：
+  任何策略都無法維持 SLO。容量理論極限不可逾越。
+\item P2C 充分（$f/N \leq \fmax$ 且 $s > \sstar$）：
+  P2C 透過隱式佇列深度迴避自動處理故障節點。
+  顯式緩解非必要，反而可能引入額外開銷。
+\item 需要緩解（$f/N \leq \fmax$ 且 $s \leq \sstar$）：
+  故障比例在容量限制內，但 P2C 無法充分避開故障節點。
+  需要主動偵測與流量重導。
+  在 P2C 下，漸進式權重削減與完全隔離的差異可忽略
+  （$< 2$\,ms）——關鍵在於偵測速度。
+\end{enumerate}
+
+結合互補性命題（第~\ref{sec:complementarity}~節），
+此框架釐清顯式緩解的適用條件：
+在區域 2，P2C 自行隔離故障節點，
+無需偵測或緩解——但監控 P999 至關重要，
+因高嚴重度故障在更深的百分位仍然可見。
+在區域 1，任何策略皆無濟於事。

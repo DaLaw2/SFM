@@ -1,0 +1,62 @@
+\section{相關工作}
+\label{sec:related}
+
+\subsubsection*{尾延遲緩解}
+
+Dean 和 Barroso~\cite{dean2013tail}提出對沖請求與綁定請求，
+至今仍是大規模資料中心系統中應對尾延遲的主要技術。
+後續研究改進並擴展了這些方法：
+Vulimiri 等人~\cite{vulimiri2013low}
+分析了各種延遲分布下的冗餘策略；
+Ananthanarayanan 等人~\cite{ananthanarayanan2013effective}
+將推測式執行（speculative execution）應用於資料分析中的落後任務（stragglers）。
+本研究指出，這些反應式機制係針對隨機性慢請求而設計，
+面對\emph{持續性}慢故障成效有限——
+持續性慢故障性質不同，須藉主動偵測方能因應。
+
+\subsubsection*{灰色故障偵測}
+
+Huang 等人~\cite{huang2017gray}
+指出灰色故障的核心在於「觀察者視角不同，可見性亦不同」，
+並提出利用元件間關聯性加以偵測的方法。
+Gunawi 等人~\cite{gunawi2018fail}
+編目了雲端系統中的故障模式，
+發現效能退化佔相當比例。
+本研究提出的離開間隔偵測延續此方向，
+提供不受負載影響的訊號，
+藉此區分真正的服務減速與因排隊效應所致的延遲上升。
+
+\subsubsection*{異常值偵測與黑名單}
+
+Cassandra 的動態偵測器~\cite{lakshman2010cassandra}
+採用指數衰減的延遲評分來迴避慢速副本。
+Netflix 的自適應路由~\cite{netflix2020zuul}
+藉由即時異常值偵測進一步延伸此做法。
+本研究顯示，黑名單機制在中度負載下有效，
+但在高負載下因移除節點的容量代價而引發災難性振盪。
+
+\subsubsection*{負載均衡理論}
+
+Mitzenmacher~\cite{mitzenmacher2001power}
+證明在同質伺服器上，P2C 相較於隨機路由可達成指數級的改善。
+本研究將此分析推廣至\emph{異質}伺服器情境
+（即包含不同服務率的故障節點），
+並推導出嚴重度非單調性現象背後的
+流量依容量比例分配機制。
+
+\subsubsection*{故障下的容量規劃}
+
+$N+k$ 冗餘模型已是業界常規，
+然而在慢故障情境下，負載因子、故障比例與每節點利用率上限三者之間的關聯至今缺乏形式化分析。
+本研究提出的操作包絡線公式 $\fmax = 1 - L/U$
+填補了此一空缺，提供簡潔且經驗證的分析工具。
+
+\subsubsection*{自適應負載削減}
+
+DAGOR~\cite{zhang2021dagor}和 CoDel~\cite{nichols2012codel}
+透過自適應削減應對過載，
+但主要針對整體系統負載，未涉及逐節點的故障隔離。
+本研究表明，在佇列感知路由下，
+具體的回應策略（漸進式削減或完全隔離）差異可忽略，
+偵測速度才是關鍵瓶頸。
+此觀點有別於上述側重回應策略設計的研究。

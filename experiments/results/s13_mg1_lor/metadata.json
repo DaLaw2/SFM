@@ -1,0 +1,9 @@
+{
+  "name": "s13_mg1_lor_validation",
+  "parts": [
+    "A: M/G/1 utilization ceiling",
+    "B: LOR vs P2C"
+  ],
+  "n_runs": 10,
+  "n_workers": 32
+}

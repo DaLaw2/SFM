@@ -1,0 +1,16 @@
+{
+  "name": "s14_adaptive_differentiation",
+  "experiments": {
+    "E1_many_moderate": "8 nodes at 2x slowdown (25% of cluster, isolation infeasible)",
+    "E2_mixed_severity": "6 nodes: 2x8x + 2x3x + 2x1.5x (graduated severity)",
+    "E3_progressive": "4 nodes progressive 1x\u21928x over 30s"
+  },
+  "n_runs": 10,
+  "n_workers": 32,
+  "baselines": [
+    "no_mitigation",
+    "fixed_isolation",
+    "adaptive",
+    "lit_blacklist"
+  ]
+}

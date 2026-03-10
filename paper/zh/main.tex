@@ -1,0 +1,103 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\graphicspath{{../figures/}}
+\usepackage{xcolor}
+\usepackage{subcaption}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{multirow}
+\usepackage{cite}
+\usepackage{hyperref}
+\usepackage{xeCJK}
+
+\setCJKmainfont{DFKai-SB}[AutoFakeSlant=0.2]
+\setCJKsansfont{DFKai-SB}
+\setCJKmonofont{DFKai-SB}
+
+\widowpenalty=10000
+\clubpenalty=10000
+
+% Section headings: normal weight
+\makeatletter
+\renewcommand\section{\@startsection{section}{1}{\z@}%
+  {-3.5ex \@plus -1ex \@minus -.2ex}%
+  {2.3ex \@plus .2ex}%
+  {\normalfont\Large}}
+\renewcommand\subsection{\@startsection{subsection}{2}{\z@}%
+  {-3.25ex \@plus -1ex \@minus -.2ex}%
+  {1.5ex \@plus .2ex}%
+  {\normalfont\large}}
+\renewcommand\subsubsection{\@startsection{subsubsection}{3}{\z@}%
+  {-3.25ex \@plus -1ex \@minus -.2ex}%
+  {1.5ex \@plus .2ex}%
+  {\normalfont\normalsize}}
+\makeatother
+
+\newtheorem{theorem}{定理}
+\newtheorem{corollary}[theorem]{推論}
+\newtheorem{proposition}[theorem]{命題}
+\newtheorem{remark}[theorem]{備註}
+\newtheorem{assumption}{假設}
+
+% Custom commands
+\newcommand{\Cs}{C_s}
+\newcommand{\fmax}{f_{\max}}
+\newcommand{\sstar}{s^{*}}
+\newcommand{\pfault}{p_{\text{fault}}}
+\newcommand{\rhoeff}{\rho_{\text{eff}}}
+\newcommand{\tbase}{t_{\text{base}}}
+\newcommand{\system}{\textsc{Prism}}
+
+\begin{document}
+
+\title{Power-of-Two-Choices 路由下\\慢故障緩解之容量理論極限}
+\author{DaLaw2}
+\date{}
+\maketitle
+
+\begin{abstract}
+慢故障（slow fault）是分散式系統中難以根除的尾延遲違規根源。
+在慢故障中，節點仍可連線但效能降低。
+與崩潰故障不同，慢故障能躲過健康檢查，
+且在高負載下使異常訊號趨於模糊。
+本文針對 Power-of-Two-Choices（P2C）負載均衡下的慢故障緩解問題，
+從容量理論角度加以分析，得出三項結論。
+第一，\emph{操作包絡線}：最大可容忍故障比例為
+$\fmax = 1 - L/U$，其中 $L$ 為負載因子，$U$ 為利用率上限；
+此公式無需任何擬合參數，且經實驗驗證。
+第二，\emph{嚴重度非單調性}：在 P2C 路由下，
+中度減速（如 $10\times$）導致的尾延遲
+反而高於極端減速（如 $20\times$），
+臨界嚴重度為 $\sstar = fq/((1-q)(N-f))$。
+第三，\emph{SHED--P2C 互補性}：P2C 的佇列深度比較與
+顯式權重削減（SHED）為互補機制，分別作用於路由的不同階段——
+SHED 在中度嚴重度（$2$--$5\times$）下可提供 5--70\,ms 的 P99 改善，
+但在 $\sstar$ 以上（即 P2C 已自行隔離故障節點的區間）則無需介入。
+更重要的是，P2C 下只要偵測到故障便降權，
+效果便與完全隔離幾近相同，
+證明\emph{偵測速度而非回應策略}才是慢故障緩解的首要瓶頸。
+透過 15 個故障場景之離散事件模擬，本研究發現：
+反應式機制（對沖請求、超時重試）對持續性慢故障幾乎無效，
+而主動偵測搭配流量排除既必要又充分。
+工程實務者可據此判斷緩解何時可行、
+哪些嚴重度區間需要介入、以及為何在佇列感知路由下
+偵測精確度遠不如偵測速度重要。
+\end{abstract}
+
+\input{sections/introduction}
+\input{sections/background}
+\input{sections/model}
+\input{sections/analysis}
+\input{sections/design}
+\input{sections/evaluation}
+\input{sections/related}
+\input{sections/conclusion}
+
+\bibliographystyle{plain}
+\bibliography{references}
+
+\end{document}

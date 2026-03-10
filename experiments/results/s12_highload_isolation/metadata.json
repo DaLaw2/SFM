@@ -1,0 +1,26 @@
+{
+  "name": "s12_highload_isolation",
+  "load_factors": [
+    0.8,
+    0.85,
+    0.88,
+    0.9
+  ],
+  "fault_scenarios": [
+    "s3_2node_3x",
+    "s4_4node_mixed",
+    "s6_cascade"
+  ],
+  "n_runs": 10,
+  "duration": 60.0,
+  "warmup": 5.0,
+  "n_workers": 32,
+  "slo_target_ms": 50.0,
+  "baselines": [
+    "adaptive",
+    "fixed_isolation",
+    "lit_blacklist",
+    "no_mitigation"
+  ],
+  "total_wall_time_sec": 463.43869638442993
+}

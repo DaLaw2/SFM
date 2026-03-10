@@ -1,0 +1,473 @@
+\section{Analytical Results}
+\label{sec:analysis}
+
+We derive three results that characterize the fundamental limits and
+mechanisms of slow fault mitigation under P2C routing.
+
+\subsection{Operating Envelope}
+\label{sec:envelope}
+
+When the detector isolates faulty nodes, the load on the remaining
+healthy nodes rises. Intuitively, there is a tipping point---isolate
+too many nodes, and the healthy nodes themselves become overloaded.
+The following theorem quantifies this tipping point.
+
+\begin{theorem}[Operating Envelope]
+\label{thm:envelope}
+In a cluster of $N$ nodes at load factor $L$, the maximum fraction of
+faulty nodes that can be tolerated by any isolation-based mitigation
+strategy is:
+\begin{equation}
+  \fmax = 1 - \frac{L}{U}
+\end{equation}
+where $U$ is the utilization ceiling beyond which per-node queueing
+delay becomes unacceptable.
+\end{theorem}
+
+\begin{proof}
+When $f$ nodes are isolated (removed from the active pool), the
+remaining $N - f$ healthy nodes must absorb the entire system load. The
+effective per-node utilization becomes:
+\begin{equation}
+  \rhoeff = \frac{\Lambda}{(N-f) \cdot \mu} = \frac{L \cdot N}{N - f}
+\end{equation}
+For the system to remain stable with acceptable queueing delay, we
+require $\rhoeff \leq U$. Solving for $f$:
+\begin{equation}
+  f \leq N \left(1 - \frac{L}{U}\right)
+\end{equation}
+\end{proof}
+
+In short, $L/U$ is the minimum fraction of nodes needed to sustain the
+load; anything beyond that is the margin available for isolation.
+The higher the load, the smaller the margin.
+
+\medskip
+
+The parameter $U$ in Theorem~\ref{thm:envelope} is free---it depends
+on how ``acceptable queueing delay'' is defined. We next derive its
+closed form from the M/D/1 model, turning the envelope into a
+zero-parameter prediction tool.
+For a single-server queue with deterministic service time $\tbase$,
+the mean sojourn time is:
+\begin{equation}
+  T(\rho) = \tbase \cdot \frac{2 - \rho}{2(1 - \rho)}
+  \label{eq:md1}
+\end{equation}
+Rather than choosing $U$ empirically, we derive it from the SLO
+constraint $T(U) \leq \text{SLO}$.
+
+\begin{corollary}[Closed-Form Utilization Ceiling]
+\label{cor:U}
+For an M/D/1 queue with base service time $\tbase$ and a mean-latency
+SLO target, the utilization ceiling is:
+\begin{equation}
+  U = 1 - \frac{\tbase}{2 \cdot \text{SLO} - \tbase}
+    = \frac{2(\text{SLO} - \tbase)}{2 \cdot \text{SLO} - \tbase}
+  \label{eq:U}
+\end{equation}
+\end{corollary}
+
+\begin{proof}
+Set $T(U) = \text{SLO}$ in Equation~\ref{eq:md1},
+let $\alpha = 2\,\text{SLO}/\tbase$, and solve the resulting linear
+equation to obtain
+$U = (\alpha - 2)/(\alpha - 1) = 1 - \tbase/(2 \cdot \text{SLO} - \tbase)$.
+\end{proof}
+
+For our parameters ($\text{SLO} = 50$\,ms, $\tbase = 10$\,ms):
+$U = 1 - 10/90 = 8/9 \approx 0.889$. We use $U = 8/9$ throughout.
+
+\medskip
+
+\paragraph{Generalization to M/G/1 service times.}
+The following generalization is not required for the main argument,
+but quantifies the impact of service-time variability on the envelope.
+When service times are variable with coefficient of variation $\Cs$,
+the Pollaczek--Khinchine formula gives:
+\begin{equation}
+  T(\rho) = \tbase \left[1 + \frac{(1 + \Cs^2)\,\rho}{2(1-\rho)}\right]
+  \label{eq:mg1}
+\end{equation}
+Solving $T(U) = \text{SLO}$ yields the generalized ceiling:
+\begin{equation}
+  U(\Cs) = \frac{\alpha}{\alpha + 1 + \Cs^2}
+  \quad\text{where } \alpha = 2\left(\frac{\text{SLO}}{\tbase} - 1\right)
+  \label{eq:U_mg1}
+\end{equation}
+
+Table~\ref{tab:Ucv} shows the impact of service-time variability.
+
+\begin{table}[t]
+\centering
+\caption{Mean-latency-based utilization ceiling $U$ and operating
+  envelope $\fmax$ at $L = 0.80$ for different service-time
+  distributions. Values are derived from the constraint
+  $T_{\text{mean}}(U) \leq \text{SLO}$.}
+\label{tab:Ucv}
+\begin{tabular}{@{}llccc@{}}
+\toprule
+Distribution & $\Cs^2$ & $U$ & $\fmax$ & Max faults ($N{=}32$) \\
+\midrule
+M/D/1 & 0 & 0.889 & 10.0\% & 3.2 \\
+M/G/1 (mild) & 0.25 & 0.865 & 7.5\% & 2.4 \\
+M/M/1 & 1.0 & 0.800 & 0.0\% & 0.0 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The M/M/1 case ($\Cs^2 = 1$) is striking: $U = 0.800$, meaning at
+$L = 0.80$ there is \emph{zero} fault tolerance. Any slow fault
+immediately violates the SLO. This quantifies the well-known
+intuition that service-time variability erodes system headroom, and
+shows that the deterministic M/D/1 assumption provides an optimistic
+bound on fault tolerance.
+
+\begin{remark}[Validity and Tightness of the Mean-Based Ceiling]
+\label{rem:mean-p99}
+\label{rem:tight}
+Table~\ref{tab:Ucv} derives $U$ from mean latency, but SLOs are
+typically defined at P99.
+For M/D/1 ($\Cs^2 = 0$), the gap is small: deterministic service
+times produce low response-time variance, so
+$U_{\text{P99}} \gtrsim U_{\text{mean}}$ and the formula is
+\emph{conservative} (safe).
+For M/M/1 ($\Cs^2 = 1$), the gap is large: simulation shows P99
+crosses a 50\,ms SLO at $L \approx 0.70$, so the mean-based $U$ is
+\emph{optimistic} for high-variance distributions.
+In terms of tightness, at $L = 0.80$, $N = 32$ the theoretical limit
+is 3.2 nodes, yet experiments pass with 4 isolated nodes achieving
+P99 $< 50$\,ms. This margin arises from the gap between mean latency
+and P99. The envelope is slightly conservative, with the pass/fail
+boundary error within one to two nodes.
+\end{remark}
+
+\paragraph{Non-isolation strategies.}
+The bound in Theorem~\ref{thm:envelope} assumes faulty nodes are fully
+isolated. Strategies that \emph{reduce} traffic to faulty nodes (load
+shedding) without fully isolating them achieve a tighter effective
+capacity: the faulty node contributes $\mu/s_i$ effective service rate.
+In this case:
+\begin{equation}
+  \rhoeff = \frac{L \cdot N}{(N-f) + \sum_{i \in F} 1/s_i}
+\end{equation}
+where $F$ is the set of faulty nodes. This is always lower than the
+isolation case, confirming that the operating envelope bound is
+\emph{conservative}: non-isolation strategies can tolerate slightly
+higher fault fractions by preserving partial capacity.
+
+\paragraph{Empirical validation.}
+We validate Equation~\ref{eq:envelope} across four load levels with
+$N = 32$ and permanent 5$\times$ faults (Table~\ref{tab:envelope}).
+
+\begin{table}[t]
+\centering
+\caption{Operating envelope validation. Theory predicts the maximum
+  fault fraction; empirical column shows whether the adaptive strategy
+  achieves P99 $< 50$\,ms SLO.}
+\label{tab:envelope}
+\begin{tabular}{@{}ccccl@{}}
+\toprule
+$L$ & $\fmax$ & $f_{\max}$ nodes & Empirical boundary & Match \\
+\midrule
+0.70 & 21.3\% & 6.8 & 8 pass, 10 fail & \checkmark$^\dagger$ \\
+0.80 & 10.0\% & 3.2 & 4 pass, 6 fail & \checkmark \\
+0.85 & 4.4\% & 1.4 & 2 pass, 4 fail & \checkmark$^\dagger$ \\
+0.90 & $<0$ & --- & 0 pass, 2 fail & \checkmark \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The formula predicts the pass/fail boundary with zero fitted
+parameters. Rows marked $\dagger$ show the empirical boundary
+exceeding the theoretical maximum (e.g., 8 nodes pass at $L=0.70$
+despite a theoretical limit of 6.8), because $U$ is derived from
+\emph{mean} latency while P99's effective ceiling is slightly higher
+(Remark~\ref{rem:mean-p99}), making the envelope a conservative
+estimate. At $L = 0.90$, the load exceeds $U = 8/9$ and SLO
+compliance fails even without faults.
+
+Figure~\ref{fig:envelope} visualizes the operating envelope across load
+levels, showing the sharp boundary between the SAFE and OVERLOAD zones.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.85\linewidth]{operating_envelope.png}
+\caption{Operating envelope: theory vs.\ empirical. The boundary
+  $\fmax = 1 - L/U$ (dashed line) separates the SAFE zone (P99
+  $< 50$\,ms) from the OVERLOAD zone, validated with zero fitted
+  parameters.}
+\label{fig:envelope}
+\end{figure}
+
+\subsection{Severity Non-Monotonicity}
+\label{sec:nonmono}
+
+\begin{assumption}[Mean-Field P2C Approximation]
+\label{asm:meanfield}
+Under P2C with weighted random sampling, traffic to each node is
+proportional to its effective service capacity in steady state. That
+is, a node with capacity $\mu_i$ receives a fraction
+$\mu_i / \sum_j \mu_j$ of the total traffic.
+\end{assumption}
+
+This approximation is exact when the number of nodes is large and
+sampling is capacity-weighted. For finite clusters, P2C's
+queue-depth tie-breaking introduces a small positive bias toward
+faulty nodes (see Table~\ref{tab:pfault}: underestimates by 10--14\%
+at $f = 4$, $< 1$\% at $f = 8$).
+
+\medskip
+
+\begin{theorem}[Critical Severity]
+\label{thm:sstar}
+Under Assumption~\ref{asm:meanfield}, the
+fraction of traffic reaching $f$ faulty nodes with slowdown $s$ is:
+\begin{equation}
+  \pfault(f, s, N) = \frac{f}{s \cdot (N-f) + f}
+  \label{eq:pfault}
+\end{equation}
+The critical severity at which faulty traffic becomes invisible to the
+$q$-th percentile is:
+\begin{equation}
+  \sstar = \frac{f \cdot q}{(1-q)(N-f)}
+  \label{eq:sstar_deriv}
+\end{equation}
+\end{theorem}
+
+In other words: P2C routing assigns less traffic to more severely
+faulty nodes. When the severity is high enough, the faulty traffic
+fraction drops below $1-q$---at which point faulty requests become
+statistically invisible at the $q$-th percentile.
+$\sstar$ is precisely this tipping point.
+
+\begin{proof}
+Under P2C, traffic is proportional to effective service capacity.
+Healthy nodes have capacity $\mu$; faulty nodes have $\mu/s$.
+The faulty traffic fraction simplifies to
+$\pfault = f / [s(N{-}f) + f]$ (Equation~\ref{eq:pfault}).
+The system latency follows a mixture distribution;
+faulty requests are visible at percentile $q$ when $\pfault > 1-q$.
+Setting $\pfault = 1-q$ and solving for $s$ yields $\sstar$.
+\end{proof}
+
+\medskip
+
+\paragraph{Non-monotonicity mechanism.}
+For $s < \sstar$: $\pfault > 1-q$, so faulty-node latency dominates the
+$q$-th percentile. The system $P_q$ increases with $s$ because faulty
+service time $= s \cdot \tbase$.
+
+For $s > \sstar$: $\pfault < 1-q$, so faulty requests are statistically
+invisible in the $q$-th percentile. The system $P_q$ drops back to the
+healthy-node value.
+
+The \emph{worst} $P_q$ therefore occurs near $s = \sstar$, not at
+$s \to \infty$. This is the severity non-monotonicity: increasing the
+fault severity beyond $\sstar$ paradoxically \emph{improves} the
+observed tail latency.
+
+This means that the most challenging scenario for operators is not
+an extreme fault ($s \gg \sstar$) but a moderate one
+($s \approx \sstar$)---precisely the regime that is hardest to detect.
+
+\paragraph{Percentile-dependent risk.}
+The same fault configuration can be simultaneously invisible to one
+percentile and visible to another. For $f = 4$, $N = 32$:
+$s^{*}_{P99} = 14.1$ but $s^{*}_{P999} = 142.7$. A 20$\times$
+slowdown is invisible to P99 ($20 > 14.1$) but visible to P999
+($20 < 142.7$), explaining the observed pattern: P99 $= 49$\,ms
+(normal) but P999 $= 17{,}427$\,ms (catastrophic).
+
+\paragraph{Empirical validation.}
+Table~\ref{tab:pfault} validates the traffic distribution model.
+
+\begin{table}[t]
+\centering
+\caption{Traffic fraction reaching faulty nodes: theory vs.\ empirical
+  (no mitigation, $N=32$, $L=0.80$).}
+\label{tab:pfault}
+\begin{tabular}{@{}ccccc@{}}
+\toprule
+$f$ & $s$ & Theory $\pfault$ & Empirical & Ratio \\
+\midrule
+4 & 3$\times$ & 4.55\% & 5.20\% & 1.14 \\
+4 & 5$\times$ & 2.78\% & 3.12\% & 1.12 \\
+4 & 10$\times$ & 1.41\% & 1.56\% & 1.11 \\
+4 & 20$\times$ & 0.71\% & 0.78\% & 1.10 \\
+\midrule
+8 & 3$\times$ & 10.00\% & 10.42\% & 1.04 \\
+8 & 5$\times$ & 6.25\% & 6.26\% & 1.00 \\
+8 & 10$\times$ & 3.23\% & 3.23\% & 1.00 \\
+8 & 20$\times$ & 1.64\% & 1.64\% & 1.00 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The model systematically underestimates by 10--14\% at $f=4$ (due to
+P2C's queue-depth tie-breaking sending slightly more traffic to slower
+nodes than the mean-field model predicts) and is exact to three
+significant figures at $f=8$.
+The systematic positive bias at $f = 4$ (ratio $\approx 1.10$--$1.14$)
+arises from P2C's queue-depth tie-breaking; the residual bias scales
+as $O(1/N)$.
+For practical purposes, the mean-field approximation is sufficient to
+predict the critical severity $\sstar$ and the P99 visibility boundary.
+
+Figure~\ref{fig:heatmap} shows the severity non-monotonicity across
+fault count and slowdown factor combinations. The heatmap clearly
+shows that moderate severities (e.g., $10\times$ with 4 faults:
+P99 $= 439$\,ms) produce worse tail latency than extreme severities
+(e.g., $20\times$ with 4 faults: P99 $= 49$\,ms).
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.85\linewidth]{severity_heatmap.png}
+\caption{Severity non-monotonicity heatmap. P99 latency (ms) by fault
+  count and slowdown factor at $L = 0.80$, $N = 32$. The
+  non-monotonic pattern is clearly visible: for each fault count,
+  there exists a critical severity beyond which P99 drops sharply.}
+\label{fig:heatmap}
+\end{figure}
+
+\subsection{SHED--P2C Complementarity}
+\label{sec:complementarity}
+
+The operating envelope and critical severity characterize \emph{what} is
+possible. We now analyze \emph{how} P2C interacts with explicit weight
+reduction (SHED), showing they are complementary mechanisms---not
+redundant.
+
+\paragraph{Two-stage routing under P2C.}
+P2C routing makes two sequential decisions:
+\begin{enumerate}
+\item \emph{Candidate selection:} sample two workers with probability
+  proportional to weights $w_i$. The probability of selecting the faulty
+  worker as a candidate is approximately $2w_i / \sum_j w_j$.
+\item \emph{Queue-depth comparison:} of the two candidates, route to the
+  one with the shorter queue.
+\end{enumerate}
+SHED operates at Stage~1 by reducing $w_i$ for faulty nodes, while P2C's
+implicit avoidance operates at Stage~2 through queue-depth comparison.
+Stage~2 can only choose between what Stage~1 offers.
+
+\begin{proposition}[SHED--P2C Complementarity]
+\label{thm:complementarity}
+Under P2C routing with $d = 2$ choices, let $\Delta_{\text{SHED}}(N, s)$
+denote the P99 improvement from SHED weight reduction on a single faulty
+node with severity $s$ in a cluster of $N$ nodes. Then:
+\begin{enumerate}
+\item[(a)] \emph{Scale decay:} $\Delta_{\text{SHED}}(N, s) = O(N^{-\alpha})$
+  with $\alpha \approx 1.3$ for $s$ in the moderate regime.
+\item[(b)] \emph{Severity regimes:} $\Delta_{\text{SHED}}$ is maximized
+  at intermediate $s$ (typically $3$--$5\times$), negligible for $s < 1.5$
+  and $s > \sstar$.
+\item[(c)] \emph{Practical equivalence:} Under P2C, a minimum weight
+  $w_{\min} = 0.05$ achieves P99 within $O(w_{\min}/N)$ of full isolation
+  ($w = 0$).
+\end{enumerate}
+\end{proposition}
+
+Intuitively: P2C's queue comparison is already a strong first line of
+defense. SHED adds a second filter on top, but because the first line
+is already effective, the marginal benefit of the second decays with
+cluster size.
+
+\medskip
+
+The proof follows from the two-stage structure. Without SHED (uniform
+weights), the probability of the faulty worker appearing as a candidate
+per request is $\approx 2/N$. With SHED weight $w_{\min}$, this drops to
+$\approx 2w_{\min}/N$---a factor-of-$1/w_{\min}$ reduction in candidacy
+rate. However, P2C's Stage~2 already rejects the faulty worker most of the
+time via queue comparison. The \emph{net} traffic reaching the faulty
+worker scales as $O(1/N)$ without SHED and $O(w_{\min}/N)$ with SHED. As
+$N$ grows, the baseline traffic to the faulty worker is already negligible,
+so SHED's marginal benefit vanishes.
+
+\paragraph{Capacity-loss boundary.}
+The above complementarity has an important exception: when healthy-node
+effective load
+$L_{\text{healthy}} = L \cdot N / (N - f_{\text{shed}})$ exceeds the
+queueing knee ($\approx 0.88$--$0.90$), SHED's weight reduction becomes
+counterproductive---the redistributed traffic saturates healthy nodes,
+and the resulting queueing delay increase exceeds the original benefit.
+
+\paragraph{Empirical validation.}
+Table~\ref{tab:shed_complementarity} validates the complementarity theorem
+across cluster sizes, severity levels, and fault counts.
+
+\begin{table}[t]
+\centering
+\caption{SHED P99 improvement (ms) over no mitigation under P2C.
+  SHED reduces weight to $w = \max(0.05, 1-\sigma)$; ISO sets $w = 0$.
+  All values are 10-run means.}
+\label{tab:shed_complementarity}
+\begin{tabular}{@{}lccccl@{}}
+\toprule
+Config & no\_mit & SHED & ISO & SHED $\Delta$ & Note \\
+\midrule
+\multicolumn{6}{@{}l}{\emph{Scale sweep ($s = 3\times$, $L = 0.70$)}} \\
+$N=8$  & 79.7 & 34.6 & 34.3 & $-45.1$ & Large at small $N$ \\
+$N=16$ & 59.3 & 29.8 & 28.2 & $-29.5$ & \\
+$N=32$ & 46.6 & 27.8 & 26.9 & $-18.8$ & \\
+$N=64$ & 28.5 & 26.8 & 26.4 & $-1.7$  & Negligible at large $N$ \\
+\midrule
+\multicolumn{6}{@{}l}{\emph{Severity sweep ($N = 16$, $L = 0.70$)}} \\
+$s=1.5$ & 29.3 & 28.0 & 28.1 & $-1.3$ & Below detection threshold \\
+$s=3$   & 59.3 & 29.8 & 28.2 & $-29.5$ & Peak benefit \\
+$s=5$   & 99.7 & 29.7 & 28.2 & $-70.0$ & Near $\sstar$ \\
+$s=10$  & 34.6 & 34.6 & 34.6 & $+0.0$ & Above $\sstar$: self-isolated \\
+\midrule
+\multicolumn{6}{@{}l}{\emph{Without queue-aware routing (weighted random)}} \\
+$s=3$, WR & 17757 & 2060 & --- & $-15697$ & SHED critical without P2C \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The final row demonstrates that SHED is \emph{not} inherently ineffective
+---it provides a 15,697\,ms improvement without queue-aware routing. It is
+specifically P2C's queue-depth comparison that makes SHED's contribution
+marginal. This confirms that the two mechanisms are complementary: P2C
+provides the dominant defense, and SHED provides a secondary filter at the
+candidate-selection stage.
+
+\medskip
+
+The SHED--ISO gap under P2C is consistently $< 2$\,ms
+(Table~\ref{tab:shed_complementarity}), while the gap between no mitigation
+and any proactive strategy ranges from 5--70\,ms. This order-of-magnitude
+difference implies that the primary engineering challenge is \emph{how
+quickly} a faulty node is detected, not \emph{how precisely} its weight is
+reduced. A coarse binary detector (``reduce weight or not'') achieves
+nearly optimal results under P2C.
+
+\subsection{Implications for Mitigation Design}
+
+The two formulas define three regimes for any $(f, s, L, N)$
+configuration:
+
+\begin{enumerate}
+\item \textbf{Infeasible} ($f/N > \fmax$): No strategy can maintain the
+  SLO. The capacity-theoretic limit is absolute.
+\item \textbf{P2C-sufficient} ($f/N \leq \fmax$ and $s > \sstar$):
+  P2C's implicit queue-depth avoidance handles the fault automatically.
+  Explicit mitigation is unnecessary and may introduce overhead.
+\item \textbf{Mitigation-required} ($f/N \leq \fmax$ and $s \leq
+  \sstar$): The fault is within capacity limits but P2C cannot
+  sufficiently avoid faulty nodes. Proactive detection and traffic
+  redirection are needed.
+\end{enumerate}
+
+Combined with the complementarity theorem (Section~\ref{sec:complementarity}),
+this framework explains when and why explicit mitigation adds value:
+\begin{itemize}
+\item In Regime~2 ($s > \sstar$), P2C self-isolates faulty nodes. No
+  detection or mitigation is needed---but monitoring P999 is critical,
+  since high-severity faults remain visible at deeper percentiles.
+\item In Regime~3 ($s \leq \sstar$), detection-triggered weight reduction
+  or isolation is necessary. Under P2C, the choice between graduated
+  weight reduction and full isolation is inconsequential ($< 2$\,ms
+  difference). What matters is detection speed.
+\item In Regime~1, no strategy helps. The capacity limit is absolute.
+\end{itemize}

@@ -1,0 +1,49 @@
+\section{Conclusion}
+\label{sec:conclusion}
+
+We presented a capacity-theoretic analysis of slow fault mitigation
+under Power-of-Two-Choices load balancing, establishing three results.
+The \emph{operating envelope} ($\fmax = 1 - L/U$) determines when
+mitigation is feasible. The \emph{critical severity} ($\sstar =
+fq/((1-q)(N-f))$) identifies the slowdown regime where P2C's implicit
+avoidance suffices versus where explicit detection is needed. The
+\emph{SHED--P2C complementarity} (Proposition~\ref{thm:complementarity}) shows that under queue-aware
+routing, detection speed dominates strategy selection: graduated weight
+reduction and full isolation achieve nearly identical P99, and the
+benefit of any explicit mitigation decays as $O(N^{-1.3})$ with cluster
+size.
+
+Our evaluation across 15 fault scenarios yields two actionable findings:
+(1)~reactive mechanisms (hedged requests, timeout retry) are ineffective
+against persistent slow faults; (2)~proactive detection with traffic
+exclusion is both necessary and sufficient, with the specific exclusion
+mechanism being inconsequential under P2C.
+
+The severity non-monotonicity result has a practical implication:
+monitoring dashboards that track only P99 latency will miss faults with
+$s > \sstar$, which appear normal at P99 but are catastrophic at P999.
+Systems should monitor multiple percentiles to detect these ``silent
+killers.''
+
+\paragraph{Limitations.}
+Our model assumes a single-tier architecture with homogeneous workers
+and no request affinity. Multi-tier systems with fan-out amplify slow
+fault impact~\cite{dean2013tail}, and we expect the operating envelope
+to tighten. The utilization ceiling $U$ is derived from mean latency
+(Corollary~\ref{cor:U}); for the M/D/1 model used throughout, the
+formula is conservative. For high-variance service times ($\Cs^2 \geq 1$),
+the mean-based $U$ is optimistic (Remark~\ref{rem:mean-p99}). The
+SHED--P2C complementarity result applies specifically to P2C; under
+non-queue-aware routing (weighted random), SHED provides massive benefit
+(Table~\ref{tab:shed_complementarity}), suggesting the result does not
+generalize to all routing policies.
+
+\paragraph{Future work.}
+Two directions are natural extensions. First, \emph{retry amplification}:
+retries under slow faults increase effective load by
+$L_{\text{eff}} = L \cdot (1 + r \cdot p_{\text{timeout}})$, potentially
+shrinking the operating envelope. Formalizing how retries interact with
+the capacity limit is important for systems with retry policies. Second,
+extending the analysis to \emph{fan-out architectures}, where a single
+slow node affects $O(N)$ requests through scatter-gather, likely reduces
+tolerance to $\fmax \approx (1-L/U)/\text{fan-out}$.

@@ -1,0 +1,76 @@
+\section{Background and Motivation}
+\label{sec:background}
+
+\subsection{Slow Faults in Production Systems}
+
+Gray failures~\cite{huang2017gray} encompass a spectrum of partial
+failures where components are neither fully operational nor completely
+down. Slow faults---a subclass where service time degrades by a factor
+$s > 1$---arise from diverse root causes: memory pressure causing
+excessive garbage collection, disk degradation increasing I/O latency,
+thermal throttling reducing CPU frequency, or network congestion on a
+specific path~\cite{gunawi2018fail}.
+
+Unlike crash faults, slow faults are difficult to detect because the
+affected node continues to respond, albeit slowly. Standard health
+checks (TCP probes, heartbeats) cannot distinguish a 5$\times$ slower
+node from a healthy one under transient load. This ambiguity is
+especially pronounced at high system utilization, where \emph{all} nodes
+exhibit elevated latency due to queueing effects.
+
+\subsection{Power-of-Two-Choices Load Balancing}
+
+Power-of-Two-Choices (P2C)~\cite{mitzenmacher2001power} is the dominant
+load balancing algorithm in modern distributed systems, used in
+Envoy~\cite{envoy}, nginx, and numerous cloud-native
+infrastructure. For each incoming request, P2C samples two candidate
+workers at random and routes the request to the one with the shorter
+queue.
+
+P2C provides an important but under-appreciated implicit mitigation
+mechanism for slow faults. A node with slowdown factor $s$ processes
+requests $s$ times slower, causing its queue to grow. P2C's queue-depth
+comparison then naturally avoids this node, routing traffic to healthier
+alternatives. We show in Section~\ref{sec:nonmono} that this implicit
+mitigation is highly effective at extreme severities ($s > \sstar$) but
+insufficient at moderate severities ($s < \sstar$), precisely where
+explicit mitigation strategies add value.
+
+\subsection{Existing Mitigation Approaches}
+
+\paragraph{Hedged requests.}
+Dean and Barroso~\cite{dean2013tail} proposed sending a speculative
+copy of a request to a second server after a delay (typically the
+expected service time). The client uses whichever response arrives
+first. This is effective for random stragglers but, as we demonstrate,
+ineffective for persistent slow faults because new requests continue to
+be routed to the faulty node.
+
+\paragraph{Outlier blacklisting.}
+Systems like Cassandra's dynamic snitch~\cite{lakshman2010cassandra}
+track per-node latency and temporarily blacklist nodes whose latency
+exceeds $k$ standard deviations above the cluster median. This is a
+proactive mechanism that redirects future traffic, but risks oscillation
+at high load when blacklisting reduces capacity and increases latency on
+remaining nodes.
+
+\paragraph{Circuit breaking.}
+Istio and Envoy implement circuit breakers that open when error rates or
+latency exceed thresholds, redirecting traffic away from unhealthy
+endpoints. These are effective but require manual threshold tuning and
+do not adapt to varying load conditions.
+
+\subsection{The Mitigation Trap}
+\label{sec:trap}
+
+A key motivation for this work is the \emph{mitigation trap}: at high
+system load, naive mitigation strategies can be \emph{worse than doing
+nothing}. Consider hedged requests at 85\% load: each hedge adds a
+duplicate request, pushing healthy workers from $\rho = 0.85$ toward
+saturation. The M/D/1 queueing delay grows as $\rho/(2(1-\rho))$,
+creating a positive feedback loop: hedges increase load, which
+increases latency, which triggers more hedges.
+
+We discovered this phenomenon empirically (Section~\ref{sec:eval-lit})
+and it motivates the load-aware design of our adaptive framework: any
+mitigation strategy must account for its own capacity cost.

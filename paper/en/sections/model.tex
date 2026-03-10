@@ -1,0 +1,64 @@
+\section{System Model}
+\label{sec:model}
+
+\subsection{Architecture}
+
+We model a single-tier distributed service consisting of $N$
+homogeneous worker nodes fronted by a load balancer. Requests arrive as
+a Poisson process with aggregate rate $\Lambda = L \cdot N \cdot \mu$,
+where $L \in (0, 1)$ is the \emph{load factor} and $\mu = 1/\tbase$ is
+the per-node service rate. Each worker processes requests sequentially
+(single-server) with deterministic service time $\tbase$ under normal
+conditions, yielding an M/D/1 queueing model per node.
+
+The load balancer implements weighted Power-of-Two-Choices (P2C): for
+each request, it samples two candidates with probability proportional
+to their weights $w_i \in [0, 1]$ and routes to the candidate with the
+shorter queue depth.
+
+\subsection{Fault Model}
+
+A \emph{slow fault} on node $i$ multiplies its service time by a
+slowdown factor $s_i > 1$:
+\begin{equation}
+  t_i = s_i \cdot \tbase
+\end{equation}
+We consider $f$ simultaneously faulty nodes out of $N$ total. Faults
+are \emph{persistent}: once onset occurs, the slowdown remains until
+explicit recovery (if any). We study five fault patterns:
+
+\begin{itemize}
+\item \textbf{Permanent}: constant $s$ after onset.
+\item \textbf{Progressive}: $s(t) = 1 + (s_{\max}-1)(1-e^{-\beta t})$,
+  gradually worsening.
+\item \textbf{Fluctuating}: alternates between $s = s_{\text{peak}}$ and
+  $s = 1$ with configurable on/off durations.
+\item \textbf{Cascading}: faults appear sequentially on different nodes
+  at staggered times.
+\item \textbf{Recovering}: fault active for a fixed duration, then node
+  returns to normal.
+\end{itemize}
+
+\subsection{Performance Metrics}
+
+We evaluate using standard tail latency metrics:
+\begin{itemize}
+\item \textbf{P99/P999 latency}: 99th and 99.9th percentile of
+  end-to-end request latency (including queueing delay).
+\item \textbf{SLO violation rate}: fraction of requests exceeding the
+  SLO target (50\,ms in our experiments).
+\item \textbf{Goodput}: requests completing within SLO per second.
+\item \textbf{Affected ratio}: fraction of requests served by faulty
+  nodes (measures load balancer effectiveness).
+\end{itemize}
+
+\subsection{Minimax Regret}
+
+To compare strategies across diverse scenarios, we use the \emph{minimax
+regret} criterion. For strategy $j$ in scenario $i$, the regret is:
+\begin{equation}
+  R_{ij} = P99_{ij} - \min_k P99_{ik}
+\end{equation}
+The minimax regret of strategy $j$ is $\max_i R_{ij}$: its worst-case
+gap from the best strategy in any scenario. A strategy with low minimax
+regret is robust across operating conditions.

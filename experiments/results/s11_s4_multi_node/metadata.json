@@ -1,0 +1,45 @@
+{
+  "name": "s11_s4_multi_node",
+  "n_runs": 20,
+  "duration": 60.0,
+  "warmup": 5.0,
+  "n_workers": 32,
+  "load_factor": 0.8,
+  "slo_target_ms": 50.0,
+  "baselines": [
+    {
+      "name": "no_mitigation",
+      "description": "No response to slow faults (lower bound)"
+    },
+    {
+      "name": "fixed_speculation",
+      "description": "Always speculate, never shed or isolate"
+    },
+    {
+      "name": "fixed_shedding",
+      "description": "Always shed load, never speculate or isolate"
+    },
+    {
+      "name": "fixed_isolation",
+      "description": "Aggressively isolate slow nodes (IASO-style)"
+    },
+    {
+      "name": "adaptive",
+      "description": "Our adaptive multi-strategy framework"
+    },
+    {
+      "name": "lit_hedged",
+      "description": "Unconditional hedged requests (Dean & Barroso 2013), delay=2*t_base"
+    },
+    {
+      "name": "lit_blacklist",
+      "description": "Outlier blacklisting (Cassandra dynamic snitch style), k=2.0"
+    },
+    {
+      "name": "lit_retry",
+      "description": "Timeout retry, deadline=SLO/2 then retry on another node"
+    }
+  ],
+  "parallelism": 19,
+  "total_wall_time_sec": 876.9837183952332
+}

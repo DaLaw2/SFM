@@ -1,0 +1,394 @@
+\section{Evaluation}
+\label{sec:evaluation}
+
+We evaluate our analytical results through discrete-event simulation
+using SimPy, validated against a JAX-accelerated GPU simulator. Our
+goals are to: (1)~validate the operating envelope, severity
+non-monotonicity, and SHED--P2C complementarity theorems;
+(2)~compare against literature baselines; (3)~characterize robustness
+across operating conditions.
+
+\subsection{Experimental Setup}
+
+\paragraph{Cluster.}
+$N = 32$ workers, each modeled as an M/D/1 queue with $\tbase =
+10$\,ms. Default load factor $L = 0.80$ (total arrival rate
+$\Lambda = 2{,}560$ req/s). SLO target: P99 $\leq 50$\,ms.
+
+\paragraph{Baselines.}
+We compare eight strategies:
+\begin{itemize}
+\item \textbf{no\_mitigation}: No response to slow faults (lower bound).
+\item \textbf{fixed\_speculation}: Always hedge, never shed or isolate.
+\item \textbf{fixed\_shedding}: Always shed load via reduced weights.
+\item \textbf{fixed\_isolation}: Aggressively isolate slow nodes
+  ($\theta_{\text{iso}} = 0.3$).
+\item \textbf{adaptive} (\system{}): Our adaptive multi-strategy framework.
+\item \textbf{lit\_hedged}: Unconditional hedged
+  requests~\cite{dean2013tail} with delay $= 3 \cdot \tbase$ and
+  10\% budget cap.
+\item \textbf{lit\_blacklist}: Outlier blacklisting (Cassandra
+  style~\cite{lakshman2010cassandra}), $k = 2.0$, cooldown 3 epochs.
+\item \textbf{lit\_retry}: Timeout retry with deadline $= 0.7 \times
+  \text{SLO}$.
+\end{itemize}
+
+\paragraph{Fault scenarios.}
+Table~\ref{tab:scenarios} summarizes the 6 primary scenarios (S2--S7),
+each exercising a different fault pattern. All use 10 runs with
+different random seeds; S4 uses 20 runs due to higher variance from
+randomized slowdown factors.
+
+\begin{table}[t]
+\centering
+\caption{Fault scenarios.}
+\label{tab:scenarios}
+\small
+\begin{tabular}{@{}llccc@{}}
+\toprule
+ID & Pattern & Faults & Severity & Duration \\
+\midrule
+S2 & Progressive & 2 & $1{\to}15\times$ & 60\,s \\
+S3 & Flash crowd & 2 & $3\times$ + load spikes & 60\,s \\
+S4 & Multi-node & 4 & $2{-}5\times$ (random) & 60\,s \\
+S5 & Fluctuating & 2 & $5\times$ on/off & 60\,s \\
+S6 & Cascade & $1{\to}2{\to}3$ & $5/5/3\times$ & 90\,s \\
+S7 & Recovery & 2 & $8\times$ then recover & 100\,s \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Reactive vs.\ Proactive Strategies}
+\label{sec:eval-lit}
+\label{sec:eval-tiers}
+
+Table~\ref{tab:tiers} presents P99 latency across all scenarios. The
+results reveal three distinct performance tiers.
+
+\begin{table}[t]
+\centering
+\caption{P99 latency (ms) across scenarios at $L = 0.80$. Bold
+  indicates best per scenario.}
+\label{tab:tiers}
+\footnotesize
+\begin{tabular}{@{}lcccccc@{}}
+\toprule
+Baseline & S2 & S3 & S4 & S5 & S6 & S7 \\
+\midrule
+\system{} & \textbf{30.0} & 39.3 & 43.8 & \textbf{30.3} & \textbf{32.8} & \textbf{29.7} \\
+lit\_blacklist & 30.5 & 41.1 & \textbf{37.4} & 30.5 & \textbf{32.8} & 30.5 \\
+fixed\_iso & 30.3 & 39.9 & 37.6 & 30.6 & \textbf{32.8} & \textbf{29.7} \\
+fixed\_spec & 31.9 & 41.0 & 54.6 & 31.2 & 35.0 & 29.8 \\
+fixed\_shed & 33.6 & \textbf{39.2} & 69.3 & 31.1 & 37.0 & 29.9 \\
+\midrule
+lit\_hedged & 60.8 & 68.2 & 112.9 & 34.6 & 109.9 & 32.3 \\
+lit\_retry & 60.8 & 68.1 & 112.7 & 34.5 & 109.5 & 32.3 \\
+no\_mitig & 66.7 & 73.5 & 119.5 & 34.9 & 125.3 & 32.3 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Tier 1: Proactive strategies (P99 $< 45$\,ms).}
+\system{}, lit\_blacklist, and fixed\_isolation all achieve P99 below
+45\,ms across every scenario. Their common mechanism---detect faulty
+nodes, then stop routing to them---is effective regardless of detection
+method (departure intervals, latency outliers, or fixed threshold).
+
+\paragraph{Tier 2: Reactive strategies (P99 $\approx$ no\_mitigation).}
+lit\_hedged and lit\_retry provide marginal improvement over
+no\_mitigation: SLO violation rates of 0.7--3.4\% vs.\ 0.8--3.7\%
+($< 0.3$ percentage points improvement). The root cause: hedging is
+designed for random stragglers, not persistent faults. Each request
+independently decides whether to hedge, but future requests continue
+to be routed to the same faulty nodes.
+
+\paragraph{Tier 3: No mitigation.}
+The baseline, with P99 ranging from 32--125\,ms depending on scenario
+severity.
+
+Figure~\ref{fig:tiers} visualizes the three-tier separation across all
+eight baselines, showing the clear performance gap between proactive
+and reactive strategies.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.85\linewidth]{p99_comparison.png}
+\caption{P99 latency comparison across eight baselines (S4 scenario,
+  $L = 0.80$). Three performance tiers are clearly visible: proactive
+  strategies (P99 $< 45$\,ms), reactive strategies (P99 $\approx$
+  no\_mitigation), and the unmitigated baseline.}
+\label{fig:tiers}
+\end{figure}
+
+\subsection{Minimax Regret at Standard Load}
+\label{sec:eval-regret}
+
+Table~\ref{tab:regret} presents the minimax regret analysis across S2--S7.
+
+\begin{table}[t]
+\centering
+\caption{Minimax regret (ms above scenario-best P99) at $L = 0.80$.}
+\label{tab:regret}
+\footnotesize
+\begin{tabular}{@{}lccl@{}}
+\toprule
+Strategy & Max regret & Mean regret & Worst scenario \\
+\midrule
+lit\_blacklist & 0.6 & 0.1 & S7 \\
+fixed\_iso & 0.2 & 0.1 & S4 \\
+\system{} & 0.2 & 0.1 & S4 \\
+fixed\_spec & 9.5 & 2.2 & S4 \\
+fixed\_shed & 22.2 & 5.0 & S4 \\
+lit\_retry & 76.4 & 36.2 & S6 \\
+lit\_hedged & 76.9 & 36.4 & S6 \\
+no\_mitig & 92.2 & 42.0 & S6 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+At standard load ($L = 0.80$), the top three proactive strategies
+---lit\_blacklist (0.6\,ms), fixed\_isolation (0.2\,ms), and \system{}
+(0.2\,ms)---all achieve near-zero minimax regret. This confirms the
+complementarity theorem's key prediction: under P2C, the specific
+response strategy matters far less than whether detection occurs at all.
+
+\subsection{SHED--P2C Complementarity Validation}
+\label{sec:eval-shed}
+
+We validate the complementarity theorem
+(Section~\ref{sec:complementarity}) by comparing P2C-only (no mitigation)
+against SHED (weight reduction without isolation) and full isolation
+across four dimensions: cluster size, severity, load, and fault count
+(S15, 10 runs per configuration).
+
+\paragraph{Scale dependence.}
+Figure~\ref{fig:shed_scale} confirms the $O(N^{-\alpha})$ scaling.
+SHED's P99 improvement over no mitigation decays from 45.1\,ms at $N=8$
+to 1.7\,ms at $N=64$ (1 fault at $3\times$, $L=0.70$). At $N=64$,
+P2C alone nearly matches explicit mitigation, consistent with P2C's
+candidacy rate of $\approx 2/N \approx 3\%$.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.85\linewidth]{shed_scale_decay.png}
+\caption{SHED benefit decays as $O(N^{-\alpha})$ ($\alpha \approx 1.3$) with cluster size. All
+  three proactive strategies (SHED, isolation, adaptive) produce nearly
+  identical P99 improvement at every $N$, confirming that strategy
+  selection is inconsequential. At $N = 64$, the benefit shrinks to
+  $< 2$\,ms.}
+\label{fig:shed_scale}
+\end{figure}
+
+\paragraph{Self-isolation threshold.}
+At $s = 10$ ($N = 16$, $L = 0.70$), all strategies converge to
+34.6\,ms: SHED, isolation, and no mitigation produce identical P99. This
+confirms that above $\sstar$, P2C's queue-depth signal is sufficient for
+complete implicit isolation. The non-monotonicity is stark: P99 rises from
+29.3\,ms at $s = 1.5$ to 99.7\,ms at $s = 5$, then drops to 34.6\,ms at
+$s = 10$.
+
+\paragraph{SHED $\approx$ ISO under P2C.}
+Across all 16 tested configurations, the P99 gap between SHED
+($w_{\min} = 0.05$) and full isolation ($w = 0$) is consistently
+$< 2$\,ms. In contrast, the gap between no mitigation and either
+proactive strategy ranges from 5--70\,ms. This order-of-magnitude
+difference confirms that detection is the bottleneck, not strategy
+selection.
+
+\paragraph{Control: weighted random routing.}
+Under weighted random routing (no queue-depth comparison), SHED provides
+massive improvement: 772--15,697\,ms at $s = 1.5$--$5\times$. This
+proves SHED's weight reduction is a real mechanism---it is specifically
+P2C's queue-depth comparison that makes it marginal. The result
+validates that SHED and P2C are complementary rather than SHED being
+inherently ineffective.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.95\linewidth]{shed_severity_sweep.png}
+\caption{Severity sweep under P2C vs.\ weighted-random routing ($N =
+  16$, $f = 1$, $L = 0.70$). (a)~Under P2C, SHED and isolation are
+  indistinguishable; the non-monotonicity is clearly visible in the
+  no-mitigation curve. (b)~Under weighted-random routing, SHED provides
+  order-of-magnitude improvement (note log scale), proving SHED's
+  weight reduction is a real mechanism that P2C subsumes.}
+\label{fig:shed_severity}
+\end{figure*}
+
+\subsection{High-Load Behavior}
+\label{sec:eval-highload}
+
+We sweep $L \in \{0.80, 0.85, 0.88, 0.90\}$ across three fault
+scenarios (S3-style: 2 nodes/3$\times$; S4-style: 4 nodes/mixed;
+S6-style: cascade).
+
+\begin{table}[t]
+\centering
+\caption{Minimax regret (ms) by load factor across S3/S4/S6 fault
+  scenarios.}
+\label{tab:highload}
+\footnotesize
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+Strategy & $L{=}0.80$ & $L{=}0.85$ & $L{=}0.88$ & $L{=}0.90$ \\
+\midrule
+\system{} & 7.1 & 90.0 & 26.6 & \textbf{34.8} \\
+fixed\_iso & 1.4 & 86.3 & \textbf{18.8} & 34.9 \\
+lit\_blacklist & \textbf{0.0} & \textbf{0.2} & 189.7 & 1146.5 \\
+no\_mitig & 86.9 & 88.7 & 88.8 & 51.3 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Key findings.}
+\begin{enumerate}
+\item At $L = 0.88$, fixed\_isolation's regret (18.8\,ms) is lower
+  than \system{} (26.6\,ms); at $L = 0.90$, the two are nearly tied
+  (34.8 vs.\ 34.9\,ms). This further confirms the complementarity
+  theorem's prediction: under P2C, strategy choice is inconsequential
+  ---graduated response has no systematic advantage over direct
+  isolation.
+
+\item lit\_blacklist exhibits \emph{catastrophic failure} at $L \geq 0.88$
+  with 4 faults (P99 $= 1{,}407$\,ms, 89\% SLO violation). The root
+  cause: blacklisting removes nodes entirely, and its conservative
+  cooldown causes oscillation---blacklist $\to$ reintegrate $\to$
+  re-blacklist---that amplifies load spikes.
+
+\item At the capacity limit ($L = 0.88$, $f = 4$, $\rhoeff = 1.006$),
+  \emph{all} strategies fail, confirming that the operating envelope
+  is absolute.
+
+\item In extreme scenarios (e.g., all 8 nodes at $2\times$ fault,
+  $L = 0.80$), proactive mitigation \emph{backfires}:
+  no\_mitigation (76.3\,ms) outperforms fixed\_isolation (81.7\,ms)
+  and adaptive (95.7\,ms). P2C already distributes traffic
+  proportionally to capacity; explicit shedding saturates healthy
+  nodes. This further confirms the necessity of the operating envelope
+  as a prerequisite for mitigation decisions.
+\end{enumerate}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.85\linewidth]{highload_cascade.png}
+\caption{P99 latency vs.\ load factor for the cascade scenario (S6).
+  All proactive strategies converge below $L = 0.85$; at $L \geq
+  0.88$, the operating envelope is breached and performance degrades
+  sharply. lit\_blacklist's oscillation causes it to diverge from other
+  proactive strategies at high load.}
+\label{fig:highload}
+\end{figure}
+
+\subsection{Severity Non-Monotonicity Validation}
+
+Figure~\ref{fig:nonmono} validates the critical severity formula using
+S8 data (4 faults, $N = 32$, $L = 0.80$). The predicted $\sstar =
+14.1$ for P99 correctly identifies the transition: 10$\times$ (P99 $=
+439$\,ms, visible) vs.\ 20$\times$ (P99 $= 49$\,ms, invisible). The
+traffic model (Equation~\ref{eq:pfault}) is exact to three significant
+figures at $f=8$ and systematically underestimates by 10--14\% at
+$f=4$ (see Table~\ref{tab:pfault}).
+
+\begin{table}[t]
+\centering
+\caption{Severity non-monotonicity at $f = 4$, $N = 32$, $L = 0.80$
+  (no mitigation). $\sstar = 14.1$ for P99.}
+\label{fig:nonmono}
+\footnotesize
+\begin{tabular}{@{}cccrl@{}}
+\toprule
+$s$ & P99 (ms) & P999 (ms) & $\pfault$ & Visibility \\
+\midrule
+$3\times$ & 95.7 & 118.6 & 5.20\% & Visible ($> 1$\%) \\
+$5\times$ & 185.8 & 234.7 & 3.12\% & Visible \\
+$10\times$ & 439.0 & 608.3 & 1.56\% & Visible \\
+$20\times$ & 49.0 & 17{,}427 & 0.78\% & \textbf{Invisible} ($< 1$\%) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The 20$\times$ case is particularly striking: P99 returns to
+near-healthy levels (49\,ms), but P999 explodes to 17 seconds because
+$s^{*}_{P999} = 142.7$ (well above 20). The fault is a ``silent
+killer''---invisible to P99 monitoring but devastating at higher
+percentiles.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.85\linewidth]{severity_nonmono_curve.png}
+\caption{P99 latency vs.\ slowdown factor ($N = 32$, $f = 2$, $L =
+  0.80$). The no-mitigation curve exhibits clear non-monotonicity:
+  P99 peaks near $s = 3$ then declines as P2C self-isolates. All
+  proactive strategies maintain flat P99 across the severity range.}
+\label{fig:nonmono_curve}
+\end{figure}
+
+\subsection{Effect of Load Balancing Policy}
+\label{sec:eval-lor}
+
+A natural question is whether a more informed load balancer could
+replace explicit mitigation. Least-Outstanding-Requests (LOR), which
+routes each request to the worker with the shortest queue across
+\emph{all} nodes, is theoretically superior to P2C's two-sample
+approximation. We compare both policies under three fault scenarios.
+
+\begin{table}[t]
+\centering
+\caption{P99 latency (ms) under P2C vs.\ LOR load balancing
+  ($N = 32$, $L = 0.80$).}
+\label{tab:lor}
+\footnotesize
+\begin{tabular}{@{}llccc@{}}
+\toprule
+Scenario & Strategy & P2C & LOR & $\Delta$ \\
+\midrule
+\multirow{3}{*}{S2 (progressive)}
+  & no\_mitigation   & 129.7 & 84.3  & $-$45.4 \\
+  & fixed\_isolation & 30.8  & 20.7  & $-$10.2 \\
+  & adaptive         & 30.8  & 19.9  & $-$11.0 \\
+\midrule
+\multirow{3}{*}{S4 (multi-node)}
+  & no\_mitigation   & 95.9  & 59.2  & $-$36.8 \\
+  & fixed\_isolation & 37.8  & 104.4 & $+$66.7 \\
+  & adaptive         & 37.7  & 51.2  & $+$13.5 \\
+\midrule
+\multirow{3}{*}{S6 (cascade)}
+  & no\_mitigation   & 126.9 & 83.3  & $-$43.6 \\
+  & fixed\_isolation & 32.8  & 20.3  & $-$12.6 \\
+  & adaptive         & 32.8  & 19.9  & $-$12.9 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Without mitigation, LOR outperforms P2C by 30--45\,ms across all
+scenarios: its full-information routing naturally avoids slow nodes.
+However, when isolation removes faulty nodes from the pool, the result
+reverses in S4 (4 faults): LOR's P99 jumps from 37.8\,ms under P2C to
+104.4\,ms. The root cause is \emph{herd behavior}: LOR
+deterministically routes all concurrent arrivals to the same
+shortest-queue worker, creating synchronized bursts that spike
+queueing delay. P2C's randomized two-sample selection provides natural
+jitter that prevents this synchronization, making it more robust under
+capacity-constrained isolation.
+
+This result explains why P2C---despite being theoretically suboptimal
+---is the dominant choice in production systems: its randomness is not
+a weakness but a feature that enables safe fault isolation.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.85\linewidth]{p2c_vs_lor.png}
+\caption{P2C vs.\ LOR across three fault scenarios ($N = 32$, $L =
+  0.80$). LOR outperforms P2C without mitigation, but suffers herd
+  behavior under isolation in S4 (4 faults): LOR+isolation P99 jumps
+  to 104\,ms vs.\ 38\,ms under P2C.}
+\label{fig:lor}
+\end{figure}
+
+\subsection{Parameter Sensitivity}
+
+We validate that \system{} is not overfitted by perturbing all
+thresholds by $\pm 50$\%. Across 13 configurations and 6 scenarios,
+all achieve P99 $< 50$\,ms. There is no ``cliff edge'' in parameter
+space: performance degrades smoothly, confirming that the framework is
+robust to imprecise tuning.

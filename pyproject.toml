@@ -1,0 +1,18 @@
+[project]
+name = "slow-fault-simulator"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "simpy>=4.0",
+    "numpy",
+    "pandas",
+    "python-docx>=1.2.0",
+    "jax>=0.9",
+]
+
+[tool.setuptools.packages.find]
+include = ["simulator*", "simulator_gpu*"]
+
+[project.optional-dependencies]
+plot = ["matplotlib"]
+gpu = ["jax[cuda12]"]

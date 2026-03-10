@@ -1,0 +1,62 @@
+\section{Related Work}
+\label{sec:related}
+
+\paragraph{Tail latency mitigation.}
+Dean and Barroso~\cite{dean2013tail} established hedged requests and
+tied requests as primary tools for tail latency in warehouse-scale
+systems. Subsequent work refined these ideas: Vulimiri et
+al.~\cite{vulimiri2013low} analyzed redundancy strategies under various
+latency distributions; Ananthanarayanan et
+al.~\cite{ananthanarayanan2013effective} applied speculation to
+stragglers in data analytics. Our work shows that these reactive
+mechanisms, designed for random stragglers, are ineffective against
+\emph{persistent} slow faults---a distinct failure class requiring
+proactive detection.
+
+\paragraph{Gray failure detection.}
+Huang et al.~\cite{huang2017gray} characterized gray failures as
+differential observability problems and proposed detection via
+cross-component correlation. Gunawi et al.~\cite{gunawi2018fail}
+cataloged failure modes in cloud systems, finding that performance
+degradation accounts for a significant fraction. Our departure-interval
+detection builds on this work by providing a load-invariant signal that
+distinguishes genuine slowdown from queueing-induced latency increases.
+
+\paragraph{Outlier detection and blacklisting.}
+Cassandra's dynamic snitch~\cite{lakshman2010cassandra} uses
+exponentially decaying latency scores to route away from slow replicas.
+Netflix's adaptive routing~\cite{netflix2020zuul} extends this with
+real-time outlier detection. We show that blacklisting is effective at
+moderate load but exhibits catastrophic oscillation at high load due to
+the capacity cost of node removal.
+
+\paragraph{Load balancing theory.}
+Mitzenmacher~\cite{mitzenmacher2001power} proved the exponential
+improvement of P2C over random routing for homogeneous servers.
+Join-Shortest-Queue (JSQ), also known as Least-Outstanding-Requests,
+is optimal for homogeneous systems~\cite{winston1977optimality} but
+requires global queue-state information. Our evaluation
+(Section~\ref{sec:eval-lor}) shows that JSQ's deterministic routing
+creates a synchronization failure mode under fault isolation: when
+faulty nodes are removed, all arrivals concentrate on the same
+shortest-queue worker, causing herd behavior that P2C's randomized
+sampling avoids. We extend the P2C analysis to \emph{heterogeneous}
+servers (faulty nodes with different service rates), deriving the
+capacity-proportional traffic distribution that underlies the severity
+non-monotonicity result.
+
+\paragraph{Capacity planning under failures.}
+The $N+k$ redundancy model is standard practice, but the relationship
+between load factor, fault fraction, and per-node utilization ceiling
+has not been formalized for slow faults specifically. Our operating
+envelope formula $\fmax = 1 - L/U$ provides a simple, validated tool
+for this purpose.
+
+\paragraph{Adaptive load shedding.}
+DAGOR~\cite{zhang2021dagor} and CoDel~\cite{nichols2012codel} address
+overload through adaptive shedding, but focus on aggregate system load
+rather than per-node fault isolation. Our results show that under
+queue-aware routing, the specific response strategy (graduated
+shedding vs.\ full isolation) is inconsequential ($< 2$\,ms P99
+difference); detection speed is the key bottleneck. This contrasts
+with the above works' emphasis on response strategy design.

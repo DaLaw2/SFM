@@ -1,0 +1,44 @@
+{
+  "name": "s8_breaking_point",
+  "fault_counts": [
+    4,
+    8,
+    12,
+    16
+  ],
+  "severities": [
+    3.0,
+    5.0,
+    10.0,
+    20.0
+  ],
+  "n_runs": 10,
+  "duration": 60.0,
+  "warmup": 5.0,
+  "n_workers": 32,
+  "load_factor": 0.8,
+  "baselines": [
+    {
+      "name": "no_mitigation",
+      "description": "No response to slow faults (lower bound)"
+    },
+    {
+      "name": "fixed_speculation",
+      "description": "Always speculate, never shed or isolate"
+    },
+    {
+      "name": "fixed_shedding",
+      "description": "Always shed load, never speculate or isolate"
+    },
+    {
+      "name": "fixed_isolation",
+      "description": "Aggressively isolate slow nodes (IASO-style)"
+    },
+    {
+      "name": "adaptive",
+      "description": "Our adaptive multi-strategy framework"
+    }
+  ],
+  "parallelism": 19,
+  "total_wall_time_sec": 757.096750497818
+}

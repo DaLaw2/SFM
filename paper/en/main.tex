@@ -1,0 +1,80 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\graphicspath{{../figures/}}
+\usepackage{xcolor}
+\usepackage{subcaption}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{multirow}
+\usepackage{hyperref}
+\usepackage{cite}
+
+\newtheorem{theorem}{Theorem}
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{corollary}[theorem]{Corollary}
+\newtheorem{remark}[theorem]{Remark}
+\newtheorem{assumption}{Assumption}
+
+% Custom commands
+\newcommand{\Cs}{C_s}
+\newcommand{\fmax}{f_{\max}}
+\newcommand{\sstar}{s^{*}}
+\newcommand{\pfault}{p_{\text{fault}}}
+\newcommand{\rhoeff}{\rho_{\text{eff}}}
+\newcommand{\tbase}{t_{\text{base}}}
+\newcommand{\system}{\textsc{Prism}}
+
+\begin{document}
+
+\title{Capacity-Theoretic Limits of Slow Fault Mitigation\\under Power-of-Two-Choices Routing}
+\author{DaLaw2}
+\date{}
+\maketitle
+
+\begin{abstract}
+Slow faults---where nodes remain reachable but exhibit degraded
+performance---are a persistent source of tail latency violations in
+distributed systems. Unlike crash faults, slow faults evade health checks
+and produce ambiguous signals under high load. We present a
+capacity-theoretic analysis of slow fault mitigation under
+Power-of-Two-Choices (P2C) load balancing, establishing three results.
+First, the \emph{operating envelope}: the maximum tolerable fault fraction
+is $\fmax = 1 - L/U$, where $L$ is the load factor and $U$ the
+utilization ceiling, validated empirically with zero fitted parameters.
+Second, \emph{severity non-monotonicity}: under P2C routing, a moderate
+slowdown (e.g., 10$\times$) causes worse tail latency than an extreme one
+(e.g., 20$\times$), with the critical severity $\sstar =
+fq/((1-q)(N-f))$. Third, \emph{SHED--P2C complementarity}: P2C's
+queue-depth comparison and explicit weight reduction (SHED) are
+complementary mechanisms operating at different stages of routing---SHED
+provides 5--70\,ms P99 improvement at moderate severity ($2$--$5\times$)
+but is unnecessary above $\sstar$ where P2C self-isolates faulty nodes.
+Crucially, any detection-triggered weight reduction achieves nearly
+identical results to full isolation under P2C, demonstrating that
+\emph{detection speed, not response strategy, is the primary bottleneck}
+in slow fault mitigation. Through discrete-event simulation across 15
+fault scenarios, we show that reactive mechanisms (hedged requests, timeout
+retry) are ineffective, while proactive detection with traffic exclusion is
+necessary and sufficient. Our results provide practitioners with analytical
+tools to determine when mitigation is feasible, which severity regime
+demands intervention, and why detection precision matters less than
+detection speed under queue-aware routing.
+\end{abstract}
+
+\input{sections/introduction}
+\input{sections/background}
+\input{sections/model}
+\input{sections/analysis}
+\input{sections/design}
+\input{sections/evaluation}
+\input{sections/related}
+\input{sections/conclusion}
+
+\bibliographystyle{plain}
+\bibliography{references}
+
+\end{document}

@@ -1,0 +1,98 @@
+\section{Reference Implementation}
+\label{sec:design}
+
+To evaluate our analytical results, we implement \system{}, a
+detection-and-mitigation framework that identifies faulty nodes and
+reduces their routing weight. As shown in
+Section~\ref{sec:complementarity}, the specific response strategy is
+inconsequential under P2C---what matters is detection speed. We
+describe \system{} primarily to document the detection mechanism used
+in our evaluation.
+
+\subsection{Architecture Overview}
+
+\system{} operates as a control plane alongside the P2C data plane.
+Every \emph{decision epoch} $\Delta$ (default 0.5\,s), it executes a
+three-stage pipeline: \textbf{Monitor} $\to$ \textbf{Detect} $\to$
+\textbf{Act}.
+
+\paragraph{Monitor.}
+Collects per-node metrics from the data plane: request departure
+intervals, queue depths, and system-wide throughput. Computes
+\emph{spare capacity} as the gap between observed throughput and
+theoretical maximum, smoothed with an exponential moving average
+($\alpha = 0.3$).
+
+\paragraph{Detect.}
+Estimates per-node service time from the P10 of inter-departure
+intervals---a load-invariant signal derived from M/D/1 queueing theory
+(Section~\ref{sec:detection}). Computes severity as:
+\begin{equation}
+  \sigma_i = \max\left(0,\ 1 - \frac{\tbase}{d_i}\right)
+  \label{eq:severity}
+\end{equation}
+where $d_i$ is the estimated service time of node $i$. A 5$\times$
+slowdown yields $\sigma = 0.8$; a 10$\times$ yields $\sigma = 0.9$.
+
+\paragraph{Act.}
+Selects a per-node strategy based on severity thresholds and applies
+the corresponding traffic adjustment.
+
+\subsection{Detection: Departure Interval Estimation}
+\label{sec:detection}
+
+A critical challenge in slow fault detection is distinguishing genuine
+degradation from transient queueing effects. At high load ($\rho >
+0.85$), all nodes exhibit elevated response times, causing latency-based
+detectors to produce false positives.
+
+We exploit a property of M/D/1 queues: when the queue is continuously
+busy (which occurs most of the time at high utilization), inter-departure
+times equal the actual service time, regardless of queue depth. The P10
+percentile of departure intervals filters out idle gaps (when the queue
+empties) while capturing the service-time floor.
+
+This signal is \emph{load-invariant}: a node with $\tbase = 10$\,ms
+produces $d \approx 10$\,ms whether the system is at 70\% or 95\% load.
+A 5$\times$ slowdown produces $d \approx 50$\,ms at any load level.
+
+To prevent transient noise from triggering mitigation, we require
+\emph{persistence confirmation}: severity must exceed a minimum
+threshold ($\sigma > 0.05$) for two consecutive epochs before a node is
+flagged as faulty.
+
+\subsection{Response Strategies}
+\label{sec:strategies}
+
+As shown in Section~\ref{sec:complementarity}, under P2C the specific
+response strategy has negligible impact on P99 ($< 2$\,ms difference).
+\system{} implements three strategies activated by severity thresholds
+($\theta_{\text{spec}} < \theta_{\text{shed}} < \theta_{\text{iso}}$):
+speculate (send hedged copy to a healthy backup for mildly degraded
+nodes), shed (reduce routing weight
+$w_i = \max(w_{\min},\, 1 - \sigma_i \cdot \text{spare\_factor})$
+for moderately degraded nodes), and isolate (fully exclude severely
+degraded nodes, subject to capacity guard $\rhoeff \leq U$).
+Isolation is blocked when remaining healthy capacity would exceed $U$.
+
+\subsection{Load-Aware Gating}
+
+The key design principle is that \emph{every mitigation action has a
+capacity cost}. Hedging doubles request load; shedding redistributes
+load to healthy nodes; isolation removes capacity entirely. At high
+system load, these costs can outweigh the benefit, causing the
+mitigation trap.
+
+\system{} addresses this through the spare capacity signal, which gates
+all three strategies:
+\begin{itemize}
+\item Hedge budget $\propto$ spare capacity (zero hedges when spare $= 0$).
+\item SHED weight reduction $\propto$ spare\_factor (no shedding when
+  spare $< 0.08$).
+\item ISOLATE blocked when remaining $\rhoeff > U$.
+\end{itemize}
+
+This ensures that \system{} gracefully degrades: at low load, it uses
+aggressive isolation for fastest recovery; at high load, it uses
+conservative shedding to preserve capacity; at overload, it backs off
+entirely rather than making things worse.
